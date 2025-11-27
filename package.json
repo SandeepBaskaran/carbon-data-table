@@ -1,0 +1,21 @@
+{
+    "name": "carbon-data-table-plugin",
+    "version": "1.0.0",
+    "description": "Figma plugin to build and insert Carbon Design System data tables.",
+    "type": "module",
+    "engines": {
+        "node": ">=20.6.0"
+    },
+    "main": "code.js",
+    "ui": "ui.html",
+    "scripts": {
+        "build": "npm run tsc && esbuild code.ts --bundle --outfile=code.js --target=es6 --minify",
+        "tsc": "npx tsc -p tsconfig.json",
+        "watch": "esbuild code.ts --bundle --outfile=code.js --target=es6 --sourcemap=inline --watch"
+    },
+    "devDependencies": {
+        "@figma/plugin-typings": "^1.114.0",
+        "esbuild": "^0.25.5",
+        "typescript": "^5.8.3"
+    }
+}

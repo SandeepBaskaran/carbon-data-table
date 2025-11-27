@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carbon Data Table</title>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --text: #111111;
+            --border: #e6e6e6;
+            --bg-hover: #f5f5f5;
+            --bg-danger: #f24822;
+            --text-secondary: #808080;
+            --bg-secondary: #f5f5f5;
+            --bg-tertiary: #e6e6e6;
+            --brand: #0d99ff;
+            --brand-hover: #007be5;
+            --text-onbrand: #ffffff;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1e1e1e;
+                --text: #ffffff;
+                --border: #444444;
+                --bg-hover: #2c2c2c;
+                --bg-danger: #f24822;
+                --text-secondary: #b3b3b3;
+                --bg-secondary: #2c2c2c;
+                --bg-tertiary: #444444;
+                --brand: #0d99ff;
+                --brand-hover: #007be5;
+                --text-onbrand: #ffffff;
+            }
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            font-size: 11px;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        /* Layout */
+        .container {
+            flex-grow: 1;
+            padding: 16px;
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .footer {
+            padding: 16px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .footer-left {
+            display: flex;
+            align-items: center;
+        }
+
+        .footer-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Button */
+        .button {
+            height: 32px;
+            padding: 0 16px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--brand);
+            color: var(--text-onbrand);
+        }
+
+        .button:hover {
+            background-color: var(--brand-hover);
+        }
+
+        .button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .button-secondary {
+            background-color: transparent;
+            color: var(--brand);
+            border: 1px solid var(--brand);
+            margin-right: 8px;
+        }
+
+        .button-secondary:hover {
+            background-color: var(--bg-hover); /* or a light brand tint */
+            color: var(--brand-hover);
+            border-color: var(--brand-hover);
+        }
+
+        /* Table Editor */
+        .dynamic-editor {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            overflow: auto;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            position: relative;
+        }
+
+        .editor-row {
+            display: flex;
+            flex-direction: row;
+        }
+
+        .header-cell, .corner-cell, .editor-cell {
+            height: 32px;
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .header-cell {
+            background-color: var(--bg-secondary);
+            width: 95px;
+            color: var(--text-secondary);
+            font-size: 10px;
+        }
+
+        .corner-cell {
+            width: 40px;
+            background-color: var(--bg-tertiary);
+        }
+
+        .row-header {
+            width: 40px;
+        }
+
+        .editor-cell {
+            width: 95px;
+            background-color: var(--bg);
+        }
+
+        .cell-input {
+            width: 100%;
+            height: 100%;
+            border: none;
+            padding: 4px 8px;
+            font-size: 11px;
+            background: transparent;
+            color: var(--text);
+            outline: none;
+        }
+
+        .cell-input:focus {
+            box-shadow: inset 0 0 0 2px var(--brand);
+        }
+
+        /* Remove Buttons */
+        .remove-btn {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-danger);
+            color: white;
+            border: none;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            opacity: 0.9;
+        }
+
+        .header-cell:hover .remove-btn {
+            display: flex;
+        }
+
+        .header-cell:hover .header-content {
+            display: none;
+        }
+
+        /* Add Buttons */
+        .add-btn {
+            background-color: var(--bg-secondary);
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .add-btn:hover {
+            background-color: var(--bg-hover);
+            color: var(--text);
+        }
+
+        .add-col-btn {
+            width: 32px;
+            height: 32px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .add-row-btn {
+            width: 40px;
+            height: 32px;
+            border-right: 1px solid var(--border);
+        }
+
+        /* Configuration Controls */
+        .config-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding-bottom: 8px;
+            margin-bottom: 8px;
+        }
+
+        .config-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text);
+        }
+
+        .input-select {
+            height: 28px;
+            padding: 0 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 11px;
+            outline: none;
+        }
+
+        .input-select:focus {
+            border-color: var(--brand);
+        }
+
+        .input-text {
+            height: 28px;
+            padding: 0 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 11px;
+            outline: none;
+            width: auto;
+            min-width: 80px;
+        }
+
+        .input-text:focus {
+            border-color: var(--brand);
+        }
+
+        /* Warning Callout */
+        .callout {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .callout.visible {
+            display: block;
+        }
+
+        .callout-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+
+        .callout-text {
+            font-size: 11px;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .callout-link {
+            color: var(--brand);
+            text-decoration: none;
+        }
+
+        .callout-link:hover {
+            text-decoration: underline;
+        }
+    /* Additional Styles */
+        /* ... existing styles ... */
+        /* Add these new styles */
+        
+        #library-warning {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg);
+            z-index: 100;
+            padding: 40px;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        #library-warning.visible {
+            display: flex;
+        }
+
+        .warning-content {
+            max-width: 600px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .warning-header {
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        .warning-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            display: block;
+        }
+
+        .warning-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0 0 8px 0;
+        }
+
+        .warning-desc {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .steps-container {
+            background-color: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid var(--border);
+        }
+
+        .step-item {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+            align-items: flex-start;
+        }
+
+        .step-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .step-number {
+            background-color: var(--brand);
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 12px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .step-title {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text);
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .step-desc {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .action-link {
+            display: inline-block;
+            background-color: var(--brand);
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            margin-top: 8px;
+            font-size: 12px;
+        }
+
+        .action-link:hover {
+            background-color: var(--brand-hover);
+        }
+
+        /* Hide main content when warning is visible */
+        body.has-warning #main-content,
+        body.has-warning .footer {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Full Screen Library Warning -->
+    <div id="library-warning">
+        <div class="warning-content">
+            <div class="warning-header">
+                <span class="warning-icon">⚠️</span>
+                <h1 class="warning-title">Setup Required</h1>
+                <p class="warning-desc">
+                    To use the Carbon Data Table plugin, you need to connect the Carbon Design System library to this file. It only takes a minute!
+                </p>
+            </div>
+
+            <div class="steps-container">
+                <div class="step-item">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <span class="step-title">Get the Library</span>
+                        <span class="step-desc">Open the Carbon Design System community file and duplicate it to your drafts.</span>
+                        <a id="carbon-link" href="#" target="_blank" class="action-link">Open Community File ↗</a>
+                    </div>
+                </div>
+
+                <div class="step-item">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <span class="step-title">Publish the Library</span>
+                        <span class="step-desc">In the file you just duplicated, click the <strong>Publish</strong> button in the top right corner.</span>
+                    </div>
+                </div>
+
+                <div class="step-item">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <span class="step-title">Enable in this File</span>
+                        <span class="step-desc">Come back here, open the <strong>Assets</strong> panel (left sidebar), click the <strong>Library icon (📚)</strong>, and toggle ON "Carbon Design System".</span>
+                    </div>
+                </div>
+
+                <div class="step-item">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <span class="step-title">Restart Plugin</span>
+                        <span class="step-desc">Close this plugin and run it again. You'll be ready to go!</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="main-content" class="container">
+        <!-- Body Configuration -->
+        <div class="config-row">
+            <div class="config-group">
+                <label for="variant-select">Body:</label>
+                <select id="variant-select" class="input-select">
+                    <option value="default">Default</option>
+                    <option value="checkbox">Select Checkbox</option>
+                    <option value="radio">Select Radio</option>
+                </select>
+            </div>
+            <div class="config-group">
+                <input type="checkbox" id="expandable-check">
+                <label for="expandable-check">Expandable</label>
+            </div>
+            <div class="config-group">
+                <input type="checkbox" id="batch-actions-check">
+                <label for="batch-actions-check">Show Batch Actions</label>
+            </div>
+        </div>
+
+        <!-- Table Builder -->
+        <div id="editor-container"></div>
+
+        <!-- Pagination Configuration -->
+        <div class="config-row">
+            <div class="config-group">
+                <label for="pagination-select">Pagination:</label>
+                <select id="pagination-select" class="input-select">
+                    <option value="advanced">Advanced</option>
+                    <option value="simple">Simple</option>
+                    <option value="unbound">Unbound</option>
+                </select>
+            </div>
+            <!-- Advanced pagination fields -->
+            <div id="pagination-advanced-fields" class="config-group">
+                <input type="text" id="items-per-page" class="input-text" placeholder="items per page" value="100">
+                <input type="text" id="total-items" class="input-text" placeholder="total items" value="1–100 of 100 items">
+                <input type="text" id="total-pages" class="input-text" placeholder="total pages" value="of 10 pages">
+            </div>
+            <!-- Simple/Unbound pagination fields -->
+            <div id="pagination-simple-fields" class="config-group" style="display: none;">
+                <input type="text" id="current-page" class="input-text" placeholder="current page" value="Page 1">
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <div class="footer-left">
+            <input type="file" id="file-input" accept=".csv,.xlsx,.json" style="display: none;">
+            <button id="upload-btn" class="button button-secondary">Upload .csv/.xlsx/.json</button>
+        </div>
+        <div class="footer-right">
+            <button id="fetch-btn" class="button button-secondary" style="display: none;">Fetch table data</button>
+            <button id="action-btn" class="button">Insert Table</button>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let data = [
+            ['Header', 'Header', 'Header', 'Header'],
+            ['Content', 'Content', 'Content', 'Content'],
+            ['Content', 'Content', 'Content', 'Content'],
+            ['Content', 'Content', 'Content', 'Content']
+        ];
+        let validTableSelected = false;
+        let xlsxLibraryLoaded = false;
+
+        // Load XLSX library dynamically
+        function loadXLSXLibrary() {
+            return new Promise((resolve, reject) => {
+                if (window.XLSX) {
+                    xlsxLibraryLoaded = true;
+                    resolve(window.XLSX);
+                    return;
+                }
+                
+                const script = document.createElement('script');
+                script.src = 'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js';
+                script.crossOrigin = 'anonymous';
+                script.onload = () => {
+                    if (window.XLSX) {
+                        xlsxLibraryLoaded = true;
+                        resolve(window.XLSX);
+                    } else {
+                        reject(new Error('XLSX library loaded but not available'));
+                    }
+                };
+                script.onerror = () => {
+                    reject(new Error('Failed to load XLSX library from CDN'));
+                };
+                document.head.appendChild(script);
+            });
+        }
+
+        // Constants
+        const COMPONENT_KEYS = {
+            DEFAULT: "6b3a16747da78eca78b72a55c3c8c9d9d36df736",
+            DEFAULT_EXPANDABLE: "b250ea9da364d1f59483649f645398ef53a2c6b4",
+            CHECKBOX: "8971618a46bfae02cb460fa7446bc6df70e32bc0",
+            CHECKBOX_EXPANDABLE: "eb0c6fa56e00a94f56d7f6f1cfe9cde4006c5c20",
+            CHECKBOX_BATCH: "de1ec34c361bd21d3410591ce73084161da4898f",
+            RADIO: "d058d046a73cd37e780d2f5fd085a56ae8212c40"
+        };
+        
+        const PAGINATION_KEYS = {
+            ADVANCED: "58c0c9e10294103bb74b4bf9e695d64bbce04786",
+            SIMPLE: "bdfc84cb36b45371f93f062cc0aba694c622af80",
+            UNBOUND: "f67b83d30935ffaa328a7554a218d94c271b210a"
+        };
+
+        // Elements
+        const container = document.getElementById('editor-container');
+        const actionBtn = document.getElementById('action-btn');
+        const fetchBtn = document.getElementById('fetch-btn');
+        const variantSelect = document.getElementById('variant-select');
+        const expandableCheck = document.getElementById('expandable-check');
+        const batchActionsCheck = document.getElementById('batch-actions-check');
+        const paginationSelect = document.getElementById('pagination-select');
+        const paginationAdvancedFields = document.getElementById('pagination-advanced-fields');
+        const paginationSimpleFields = document.getElementById('pagination-simple-fields');
+        const uploadBtn = document.getElementById('upload-btn');
+        const fileInput = document.getElementById('file-input');
+
+        // Configuration Logic
+        function updateConfigState() {
+            const variant = variantSelect.value;
+            
+            // Expandable: Enabled for Default or Checkbox
+            if (variant === 'default' || variant === 'checkbox') {
+                expandableCheck.disabled = false;
+            } else {
+                expandableCheck.disabled = true;
+                expandableCheck.checked = false;
+            }
+
+            // Batch Actions: Enabled only for Checkbox
+            if (variant === 'checkbox') {
+                batchActionsCheck.disabled = false;
+            } else {
+                batchActionsCheck.disabled = true;
+                batchActionsCheck.checked = false;
+            }
+        }
+
+        function updatePaginationFields() {
+            const paginationType = paginationSelect.value;
+            
+            if (paginationType === 'advanced') {
+                paginationAdvancedFields.style.display = 'flex';
+                paginationSimpleFields.style.display = 'none';
+            } else {
+                paginationAdvancedFields.style.display = 'none';
+                paginationSimpleFields.style.display = 'flex';
+            }
+        }
+
+        function getComponentKey() {
+            const variant = variantSelect.value;
+            const isExpandable = expandableCheck.checked;
+            const showBatchActions = batchActionsCheck.checked;
+
+            if (variant === 'default') {
+                return isExpandable ? COMPONENT_KEYS.DEFAULT_EXPANDABLE : COMPONENT_KEYS.DEFAULT;
+            } else if (variant === 'checkbox') {
+                if (showBatchActions) return COMPONENT_KEYS.CHECKBOX_BATCH;
+                if (isExpandable) return COMPONENT_KEYS.CHECKBOX_EXPANDABLE;
+                return COMPONENT_KEYS.CHECKBOX;
+            } else if (variant === 'radio') {
+                return COMPONENT_KEYS.RADIO;
+            }
+            return COMPONENT_KEYS.DEFAULT;
+        }
+
+        function getPaginationKey() {
+            const type = paginationSelect.value;
+            return PAGINATION_KEYS[type.toUpperCase()] || PAGINATION_KEYS.ADVANCED;
+        }
+
+        function getPaginationData() {
+            const paginationType = paginationSelect.value;
+            
+            if (paginationType === 'advanced') {
+                return {
+                    type: 'advanced',
+                    itemsPerPage: document.getElementById('items-per-page').value,
+                    totalItems: document.getElementById('total-items').value,
+                    totalPages: document.getElementById('total-pages').value
+                };
+            } else {
+                // Simple or Unbound
+                return {
+                    type: paginationType,
+                    currentPage: document.getElementById('current-page').value
+                };
+            }
+        }
+
+        // Event Listeners for Config
+        variantSelect.addEventListener('change', updateConfigState);
+        paginationSelect.addEventListener('change', updatePaginationFields);
+        expandableCheck.addEventListener('change', () => {
+             if (expandableCheck.checked && batchActionsCheck.checked) {
+                 batchActionsCheck.checked = false;
+             }
+        });
+        batchActionsCheck.addEventListener('change', () => {
+            if (batchActionsCheck.checked && expandableCheck.checked) {
+                expandableCheck.checked = false;
+            }
+        });
+
+        // Initialize Config State
+        updateConfigState();
+        updatePaginationFields();
+
+        // Render Function
+        function render() {
+            const rows = data.length;
+            const cols = data[0] ? data[0].length : 0;
+
+            let html = '<div class="dynamic-editor">';
+
+            // Header Row
+            html += '<div class="editor-row header-row">';
+            html += '<div class="corner-cell"></div>';
+            for (let c = 0; c < cols; c++) {
+                html += `
+                    <div class="header-cell col-header">
+                        <div class="header-content">C${c + 1}</div>
+                        <button class="remove-btn" onclick="removeColumn(${c})" title="Remove Column">−</button>
+                    </div>
+                `;
+            }
+            if (cols < 12) {
+                html += '<button class="add-btn add-col-btn" onclick="addColumn()" title="Add Column">+</button>';
+            }
+            html += '</div>';
+
+            // Data Rows
+            for (let r = 0; r < rows; r++) {
+                html += '<div class="editor-row">';
+                // Row Header
+                html += `
+                    <div class="header-cell row-header">
+                        <div class="header-content">${r === 0 ? "H" : "R" + r}</div>
+                        ${r > 0 ? `<button class="remove-btn" onclick="removeRow(${r})" title="Remove Row">−</button>` : ''}
+                    </div>
+                `;
+                // Cells
+                for (let c = 0; c < cols; c++) {
+                    const value = data[r][c] || '';
+                    html += `
+                        <div class="editor-cell">
+                            <input 
+                                class="cell-input" 
+                                value="${escapeHtml(value)}" 
+                                onchange="updateCell(${r}, ${c}, this.value)"
+                            />
+                        </div>
+                    `;
+                }
+                html += '</div>';
+            }
+
+            // Footer Row (Add Row)
+            html += '<div class="editor-row footer-row">';
+            html += '<div class="corner-cell"></div>';
+            if (rows < 13) {
+                html += '<button class="add-btn add-row-btn" onclick="addRow()" title="Add Row">+</button>';
+            }
+            html += '</div>';
+
+            html += '</div>';
+            container.innerHTML = html;
+
+            updateActionButton();
+        }
+
+        // Actions
+        window.addColumn = () => {
+            if (data[0] && data[0].length >= 12) return;
+            data = data.map((row, index) => [...row, index === 0 ? 'Header' : 'Content']);
+            if (data.length === 0) data.push(['Header']);
+            render();
+        };
+
+        window.addRow = () => {
+            if (data.length >= 13) return;
+            const cols = data[0] ? data[0].length : 0;
+            const newRow = Array(cols).fill('Content');
+            data.push(newRow);
+            render();
+        };
+
+        window.removeColumn = (index) => {
+            if (data[0] && data[0].length <= 1) return;
+            data = data.map(row => row.filter((_, i) => i !== index));
+            render();
+        };
+
+        window.removeRow = (index) => {
+            if (index === 0) return; // Header
+            if (data.length <= 1) return;
+            data = data.filter((_, i) => i !== index);
+            render();
+        };
+
+        window.updateCell = (r, c, value) => {
+            if (data[r]) data[r][c] = value;
+        };
+
+        function updateActionButton() {
+            if (validTableSelected) {
+                actionBtn.textContent = 'Modify Table';
+                fetchBtn.style.display = 'flex';
+            } else {
+                actionBtn.textContent = 'Insert Table';
+                fetchBtn.style.display = 'none';
+            }
+            
+            const rows = data.length;
+            const cols = data[0] ? data[0].length : 0;
+            const isValid = rows >= 1 && cols >= 1 && rows <= 13 && cols <= 12;
+            actionBtn.disabled = !isValid;
+        }
+
+        if (fetchBtn) {
+            fetchBtn.onclick = () => {
+                parent.postMessage({ pluginMessage: { type: 'fetch-table-data' } }, '*');
+            };
+        }
+
+        actionBtn.onclick = () => {
+            const rows = data.length;
+            const cols = data[0] ? data[0].length : 0;
+            parent.postMessage({ 
+                pluginMessage: { 
+                    type: validTableSelected ? 'modify-table' : 'insert-table',
+                    rows,
+                    columns: cols,
+                    cells: data,
+                    componentKey: getComponentKey(),
+                    paginationKey: getPaginationKey(),
+                    paginationData: getPaginationData()
+                } 
+            }, '*');
+        };
+
+        // File Parsing Functions
+        function parseCSV(text) {
+            const rows = [];
+            const lines = text.split('\n');
+            
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                const row = [];
+                let current = '';
+                let inQuotes = false;
+                
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        row.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                row.push(current.trim());
+                rows.push(row);
+            }
+            
+            return rows;
+        }
+
+        function parseJSON(text) {
+            const json = JSON.parse(text);
+            const rows = [];
+            
+            if (Array.isArray(json)) {
+                if (json.length > 0) {
+                    const headers = Object.keys(json[0]);
+                    rows.push(headers);
+                    for (const item of json) {
+                        const row = headers.map(h => String(item[h] || ''));
+                        rows.push(row);
+                    }
+                }
+            } else if (typeof json === 'object') {
+                if (json.data && Array.isArray(json.data)) {
+                    if (json.data.length > 0) {
+                        const headers = Object.keys(json.data[0]);
+                        rows.push(headers);
+                        for (const item of json.data) {
+                            const row = headers.map(h => String(item[h] || ''));
+                            rows.push(row);
+                        }
+                    }
+                } else {
+                    const headers = Object.keys(json);
+                    rows.push(headers);
+                    const row = headers.map(h => String(json[h] || ''));
+                    rows.push(row);
+                }
+            }
+            
+            return rows;
+        }
+
+        function normalizeData(rows) {
+            if (rows.length === 0) return [['Header']];
+            
+            const maxCols = Math.max(...rows.map(r => r.length));
+            const normalizedCols = Math.min(maxCols, 12);
+            
+            return rows.map(row => {
+                const normalized = row.slice(0, normalizedCols);
+                while (normalized.length < normalizedCols) {
+                    normalized.push('');
+                }
+                return normalized;
+            });
+        }
+
+        function limitData(rows) {
+            const limitedRows = rows.slice(0, 13);
+            return limitedRows.map(row => row.slice(0, 12));
+        }
+
+        // File Upload Handler
+        if (uploadBtn && fileInput) {
+            uploadBtn.onclick = () => {
+                fileInput.click();
+            };
+
+            fileInput.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const MAX_FILE_SIZE = 50 * 1024; // 50KB in bytes
+                const fileExtension = file.name.split('.').pop().toLowerCase();
+                const allowedExtensions = ['csv', 'xlsx', 'json'];
+
+                // Validate file type
+                if (!allowedExtensions.includes(fileExtension)) {
+                    parent.postMessage({
+                        pluginMessage: {
+                            type: 'notify',
+                            message: 'Invalid file type. Please upload .csv, .xlsx, or .json files only.'
+                        }
+                    }, '*');
+                    fileInput.value = '';
+                    return;
+                }
+
+                // Validate file size
+                if (file.size > MAX_FILE_SIZE) {
+                    parent.postMessage({
+                        pluginMessage: {
+                            type: 'notify',
+                            message: `File size exceeds 50KB limit. File size: ${(file.size / 1024).toFixed(2)}KB`
+                        }
+                    }, '*');
+                    fileInput.value = '';
+                    return;
+                }
+
+                const reader = new FileReader();
+
+                reader.onload = async (e) => {
+                    try {
+                        let rows = [];
+                        
+                        if (fileExtension === 'csv') {
+                            rows = parseCSV(e.target.result);
+                        } else if (fileExtension === 'json') {
+                            rows = parseJSON(e.target.result);
+                        } else if (fileExtension === 'xlsx') {
+                            try {
+                                let XLSXLib;
+                                if (window.XLSX) {
+                                    XLSXLib = window.XLSX;
+                                } else {
+                                    await loadXLSXLibrary();
+                                    XLSXLib = window.XLSX;
+                                }
+                                
+                                const arrayBuffer = e.target.result;
+                                const workbook = XLSXLib.read(arrayBuffer, { type: 'array' });
+                                const firstSheetName = workbook.SheetNames[0];
+                                const worksheet = workbook.Sheets[firstSheetName];
+                                rows = XLSXLib.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+                                rows = rows.map(row => row.map(cell => String(cell || '')));
+                            } catch (error) {
+                                parent.postMessage({
+                                    pluginMessage: {
+                                        type: 'notify',
+                                        message: `Error loading XLSX library: ${error.message}`
+                                    }
+                                }, '*');
+                                fileInput.value = '';
+                                return;
+                            }
+                        }
+
+                        if (rows.length === 0) {
+                            parent.postMessage({
+                                pluginMessage: {
+                                    type: 'notify',
+                                    message: 'No data found in file.'
+                                }
+                            }, '*');
+                            fileInput.value = '';
+                            return;
+                        }
+
+                        const normalized = normalizeData(rows);
+                        const limited = limitData(normalized);
+                        
+                        if (limited.length === 0) {
+                            limited.push(['Header']);
+                        }
+
+                        data = limited;
+                        render();
+                        
+                        parent.postMessage({
+                            pluginMessage: {
+                                type: 'notify',
+                                message: `File uploaded successfully. Loaded ${limited.length} rows (${limited.length - 1} data rows), ${limited[0]?.length || 0} columns.`
+                            }
+                        }, '*');
+                        fileInput.value = '';
+                    } catch (error) {
+                        parent.postMessage({
+                            pluginMessage: {
+                                type: 'notify',
+                                message: `Error parsing file: ${error.message}`
+                            }
+                        }, '*');
+                        fileInput.value = '';
+                    }
+                };
+
+                if (fileExtension === 'xlsx') {
+                    reader.readAsArrayBuffer(file);
+                } else {
+                    reader.readAsText(file);
+                }
+            };
+        }
+
+        // Helpers
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // Message Handling
+        window.onmessage = (event) => {
+            const msg = event.data.pluginMessage;
+            if (!msg) return;
+            
+            if (msg.type === 'selection-status') {
+                validTableSelected = msg.validTableSelected;
+                updateActionButton();
+            } else if (msg.type === 'library-status') {
+                const warningCallout = document.getElementById('library-warning');
+                const carbonLink = document.getElementById('carbon-link');
+                
+                if (!msg.isEnabled) {
+                    document.body.classList.add('has-warning');
+                    warningCallout.classList.add('visible');
+                    carbonLink.href = msg.libraryUrl;
+                } else {
+                    document.body.classList.remove('has-warning');
+                    warningCallout.classList.remove('visible');
+                }
+            } else if (msg.type === 'table-data-fetched') {
+                variantSelect.value = msg.config.variant;
+                expandableCheck.checked = msg.config.expandable || false;
+                batchActionsCheck.checked = msg.config.batchActions || false;
+                updateConfigState();
+                
+                paginationSelect.value = msg.paginationData.type || 'advanced';
+                updatePaginationFields();
+                
+                if (msg.paginationData.type === 'advanced') {
+                    document.getElementById('items-per-page').value = msg.paginationData.itemsPerPage || '';
+                    document.getElementById('total-items').value = msg.paginationData.totalItems || '';
+                    document.getElementById('total-pages').value = msg.paginationData.totalPages || '';
+                } else {
+                    document.getElementById('current-page').value = msg.paginationData.currentPage || '';
+                }
+
+                data = msg.cells || [];
+                render();
+            }
+        };
+
+        // Initial Render
+        render();
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+    "name": "sandeepbaskaran/carbon-data-table",
+    "id": "1575527581350101969",
+    "api": "1.0.0",
+    "editorType": [
+        "figma"
+    ],
+    "main": "code.js",
+    "ui": "ui.html",
+    "documentAccess": "dynamic-page",
+    "networkAccess": {
+        "allowedDomains": [
+            "https://unpkg.com",
+            "https://cdnjs.cloudflare.com"
+        ]
+    }
+}
