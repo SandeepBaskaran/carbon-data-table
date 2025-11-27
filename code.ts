@@ -65,10 +65,55 @@ interface PluginMessage {
     isEnabled?: boolean;
     libraryUrl?: string;
     message?: string;
+    anonymousUserId?: string;
+    isFirstTimeUser?: boolean;
 }
 
 // State
 let isLibraryEnabled = false;
+
+// Anonymous User ID Management
+async function getOrCreateAnonymousUserId(): Promise<string> {
+    const userIdKey = 'mixpanel_anonymous_user_id';
+    let userId = await figma.clientStorage.getAsync(userIdKey);
+    
+    if (!userId) {
+        userId = `figma_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        await figma.clientStorage.setAsync(userIdKey, userId);
+        return userId;
+    }
+    
+    return userId;
+}
+
+async function isFirstTimeUser(): Promise<boolean> {
+    const hasUsedPlugin = await figma.clientStorage.getAsync('has_used_plugin');
+    if (!hasUsedPlugin) {
+        await figma.clientStorage.setAsync('has_used_plugin', true);
+        return true;
+    }
+    return false;
+}
+
+async function getPluginContext() {
+    const selection = figma.currentPage.selection;
+    const fileKey = figma.fileKey || null;
+    const pageName = figma.currentPage.name;
+    const selectionCount = selection.length;
+    const nodeTypes = selection.map(node => node.type);
+    
+    const anonymousUserId = await getOrCreateAnonymousUserId();
+    const firstTimeUser = await isFirstTimeUser();
+    
+    return {
+        file_key: fileKey,
+        page_name: pageName,
+        selection_count: selectionCount,
+        node_types: nodeTypes,
+        anonymous_user_id: anonymousUserId,
+        is_first_time_user: firstTimeUser
+    };
+}
 
 // Utility Functions
 function findTextNode(node: SceneNode & ChildrenMixin, targetName: string, limit: number = SEARCH_LIMITS.TEXT_SEARCH): TextNode | null {
@@ -507,7 +552,21 @@ figma.on("selectionchange", async () => {
 });
 
 figma.ui.onmessage = async (msg: PluginMessage) => {
-    if (msg.type === 'insert-table') {
+    if (msg.type === 'get-plugin-context') {
+        const context = await getPluginContext();
+        figma.ui.postMessage({
+            type: 'plugin-context',
+            ...context
+        });
+    } else if (msg.type === 'get-anonymous-user-id') {
+        const userId = await getOrCreateAnonymousUserId();
+        const firstTimeUser = await isFirstTimeUser();
+        figma.ui.postMessage({
+            type: 'anonymous-user-id',
+            anonymous_user_id: userId,
+            is_first_time_user: firstTimeUser
+        });
+    } else if (msg.type === 'insert-table') {
         const { rows, columns, cells, componentKey, paginationKey, paginationData } = msg;
         if (rows && columns && cells && componentKey && paginationKey && paginationData) {
             await insertTable(rows, columns, cells, componentKey, paginationKey, paginationData);

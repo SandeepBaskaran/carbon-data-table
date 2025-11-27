@@ -4,10 +4,6 @@ node_modules/
 # Build outputs
 code.js
 
-# Environment files
-.env
-.env.local
-
 # OS files
 .DS_Store
 Thumbs.db

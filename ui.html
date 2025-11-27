@@ -554,12 +554,306 @@
             <button id="upload-btn" class="button button-secondary">Upload .csv/.xlsx/.json</button>
         </div>
         <div class="footer-right">
-            <button id="fetch-btn" class="button button-secondary" style="display: none;">Fetch table data</button>
-            <button id="action-btn" class="button">Insert Table</button>
+        <button id="fetch-btn" class="button button-secondary" style="display: none;">Fetch table data</button>
+        <button id="action-btn" class="button">Insert Table</button>
         </div>
     </div>
 
     <script>
+        // ============================================================================
+        // MIXPANEL EVENT TRACKING SYSTEM
+        // ============================================================================
+        
+        // Session Tracking State
+        window.MIXPANEL_SESSION = {
+            startTime: null,
+            actions: [],
+            tableCells: null,
+            context: null,
+            communityFileButtonClicked: false
+        };
+
+
+        // Event Definitions and Schemas
+        window.MIXPANEL_EVENTS = {
+            PLUGIN_OPENED: 'plugin_opened',
+            PLUGIN_CLOSED: 'plugin_closed',
+            TABLE_INSERTED: 'table_inserted',
+            TABLE_MODIFIED: 'table_modified',
+            TABLE_DATA_FETCHED: 'table_data_fetched',
+            FILE_UPLOADED: 'file_uploaded',
+            VARIANT_CHANGED: 'variant_changed',
+            PAGINATION_CHANGED: 'pagination_changed',
+            BUTTON_CLICKED: 'button_clicked',
+            GRID_EDITOR_ACTION: 'grid_editor_action',
+            PLUGIN_ERROR: 'plugin_error',
+            PERFORMANCE_METRIC: 'performance_metric'
+        };
+
+        // Mixpanel Configuration
+        const MIXPANEL_TOKEN = 'cb70c14367e01956789be2d75d81ca91';
+        
+        // Helper to base64 encode for Mixpanel
+        function base64Encode(str) {
+            return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g,
+                function toSolidBytes(match, p1) {
+                    return String.fromCharCode('0x' + p1);
+            }));
+        }
+
+        // Helper Functions
+        window.MixpanelTracking = {
+            initSession: function() {
+                window.MIXPANEL_SESSION.startTime = Date.now();
+                window.MIXPANEL_SESSION.actions = [];
+                window.MIXPANEL_SESSION.tableCells = null;
+                window.MIXPANEL_SESSION.communityFileButtonClicked = false;
+                this.getAnonymousUserId();
+            },
+            getAnonymousUserId: function() {
+                if (typeof parent !== 'undefined' && parent.postMessage) {
+                    parent.postMessage({
+                        pluginMessage: {
+                            type: 'get-anonymous-user-id'
+                        }
+                    }, '*');
+                }
+            },
+            addSessionAction: function(action) {
+                if (!window.MIXPANEL_SESSION.actions.includes(action)) {
+                    window.MIXPANEL_SESSION.actions.push(action);
+                }
+            },
+            getSessionDuration: function() {
+                if (!window.MIXPANEL_SESSION.startTime) return 0;
+                return Date.now() - window.MIXPANEL_SESSION.startTime;
+            },
+            getBaseProperties: function() {
+                return {
+                    plugin_version: '1.0.0',
+                    platform: navigator.platform.includes('Mac') || navigator.platform.includes('Win') ? 'desktop' : 'web',
+                    editor_type: 'figma',
+                    anonymous_user_id: window.MIXPANEL_SESSION.context?.anonymous_user_id || null,
+                    is_first_time_user: window.MIXPANEL_SESSION.context?.is_first_time_user || false,
+                    file_key: window.MIXPANEL_SESSION.context?.file_key || null,
+                    page_name: window.MIXPANEL_SESSION.context?.page_name || null,
+                    selection_count: window.MIXPANEL_SESSION.context?.selection_count || 0,
+                    node_types: window.MIXPANEL_SESSION.context?.node_types || []
+                };
+            },
+            trackPluginOpened: function(context) {
+                window.MIXPANEL_SESSION.context = context;
+                this.initSession();
+                const properties = {
+                    ...this.getBaseProperties(),
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.PLUGIN_OPENED, properties);
+            },
+            trackPluginClosed: function(tableCells) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    duration_ms: this.getSessionDuration(),
+                    actions: [...window.MIXPANEL_SESSION.actions],
+                    table_cells: tableCells ? JSON.stringify(tableCells) : null,
+                    tables_created: window.MIXPANEL_SESSION.actions.filter(a => a === 'table_inserted').length,
+                    tables_modified: window.MIXPANEL_SESSION.actions.filter(a => a === 'table_modified').length,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.PLUGIN_CLOSED, properties);
+            },
+            trackTableInserted: function(data) {
+                this.addSessionAction('table_inserted');
+                const properties = {
+                    ...this.getBaseProperties(),
+                    rows_count: data.rows_count,
+                    columns_count: data.columns_count,
+                    variant: data.variant,
+                    expandable: data.expandable,
+                    batch_actions: data.batch_actions,
+                    pagination_type: data.pagination_type,
+                    actions: [...window.MIXPANEL_SESSION.actions],
+                    table_cells: JSON.stringify(data.table_cells),
+                    execution_time_ms: data.execution_time_ms || null,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.TABLE_INSERTED, properties);
+            },
+            trackTableModified: function(data) {
+                this.addSessionAction('table_modified');
+                const properties = {
+                    ...this.getBaseProperties(),
+                    rows_count: data.rows_count,
+                    columns_count: data.columns_count,
+                    variant: data.variant,
+                    variant_changed: data.variant_changed,
+                    rows_changed: data.rows_changed,
+                    columns_changed: data.columns_changed,
+                    pagination_changed: data.pagination_changed,
+                    execution_time_ms: data.execution_time_ms || null,
+                    selection_count: data.selection_count || 1,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.TABLE_MODIFIED, properties);
+            },
+            trackTableDataFetched: function(data) {
+                this.addSessionAction('table_data_fetched');
+                const properties = {
+                    ...this.getBaseProperties(),
+                    rows_fetched: data.rows_fetched,
+                    columns_fetched: data.columns_fetched,
+                    variant: data.variant,
+                    pagination_type: data.pagination_type,
+                    execution_time_ms: data.execution_time_ms || null,
+                    selection_count: data.selection_count || 1,
+                    success: data.success !== false,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.TABLE_DATA_FETCHED, properties);
+            },
+            trackFileUploaded: function(data) {
+                this.addSessionAction('file_uploaded');
+                const properties = {
+                    ...this.getBaseProperties(),
+                    file_type: data.file_type,
+                    file_size_kb: data.file_size_kb,
+                    rows_parsed: data.rows_parsed,
+                    columns_parsed: data.columns_parsed,
+                    rows_loaded: data.rows_loaded,
+                    columns_loaded: data.columns_loaded,
+                    data_truncated: data.data_truncated,
+                    execution_time_ms: data.execution_time_ms || null,
+                    success: data.success !== false,
+                    error_message: data.error_message || null,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.FILE_UPLOADED, properties);
+            },
+            trackVariantChanged: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    previous_variant: data.previous_variant,
+                    new_variant: data.new_variant,
+                    expandable: data.expandable,
+                    batch_actions: data.batch_actions,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.VARIANT_CHANGED, properties);
+            },
+            trackPaginationChanged: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    pagination_type: data.pagination_type,
+                    previous_type: data.previous_type || null,
+                    items_per_page: data.items_per_page || null,
+                    total_items: data.total_items || null,
+                    current_page: data.current_page || null,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.PAGINATION_CHANGED, properties);
+            },
+            trackButtonClicked: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    button_id: data.button_id,
+                    button_label: data.button_label,
+                    feature_context: data.feature_context,
+                    community_file_button_clicked: data.community_file_button_clicked || false,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.BUTTON_CLICKED, properties);
+            },
+            trackGridEditorAction: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    action_type: data.action_type,
+                    rows_count: data.rows_count,
+                    columns_count: data.columns_count,
+                    new_rows_count: data.new_rows_count,
+                    new_columns_count: data.new_columns_count,
+                    actions: [...window.MIXPANEL_SESSION.actions],
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.GRID_EDITOR_ACTION, properties);
+            },
+            trackPluginError: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    error_message: data.error_message,
+                    error_stack: data.error_stack || null,
+                    operation: data.operation,
+                    community_file_button_clicked: window.MIXPANEL_SESSION.communityFileButtonClicked,
+                    selection_count: data.selection_count || 0,
+                    node_types: data.node_types || [],
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.PLUGIN_ERROR, properties);
+            },
+            trackPerformanceMetric: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    operation_name: data.operation_name,
+                    duration_ms: data.duration_ms,
+                    selection_size: data.selection_size || 0,
+                    rows_count: data.rows_count || null,
+                    columns_count: data.columns_count || null,
+                    file_size_kb: data.file_size_kb || null,
+                    file_type: data.file_type || null,
+                    memory_estimate: data.memory_estimate || null,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.PERFORMANCE_METRIC, properties);
+            },
+            trackEvent: function(eventName, properties = {}) {
+                if (!MIXPANEL_TOKEN) return;
+
+                // Get anonymous user ID from context or session
+                const distinctId = window.MIXPANEL_SESSION.context?.anonymous_user_id || 
+                                 'anonymous_' + Math.random().toString(36).substr(2, 9);
+
+                const payload = {
+                    event: eventName,
+                    properties: {
+                        token: MIXPANEL_TOKEN,
+                        distinct_id: distinctId,
+                        ...properties
+                    }
+                };
+
+                const data = base64Encode(JSON.stringify(payload));
+                const url = `https://api.mixpanel.com/track?data=${data}`;
+
+                // Use fetch with keepalive for reliability
+                fetch(url, {
+                    method: 'POST', // Using POST to avoid URL length limits, though GET is also common
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: `data=${data}`,
+                    keepalive: true
+                }).catch(() => {});
+            },
+            setTableCells: function(cells) {
+                window.MIXPANEL_SESSION.tableCells = cells;
+            },
+            markCommunityFileButtonClicked: function() {
+                window.MIXPANEL_SESSION.communityFileButtonClicked = true;
+            }
+        };
+
+        // Request plugin context on load for tracking
+        let previousVariant = null;
+        let previousPaginationType = null;
+        
+        // Request plugin context
+        parent.postMessage({
+            pluginMessage: {
+                type: 'get-plugin-context'
+            }
+        }, '*');
+
+
+
         // State
         let data = [
             ['Header', 'Header', 'Header', 'Header'],
@@ -700,9 +994,39 @@
             }
         }
 
+        // Initialize previous values for tracking
+        previousVariant = variantSelect.value;
+        previousPaginationType = paginationSelect.value;
+
         // Event Listeners for Config
-        variantSelect.addEventListener('change', updateConfigState);
-        paginationSelect.addEventListener('change', updatePaginationFields);
+        variantSelect.addEventListener('change', () => {
+            if (window.MixpanelTracking && previousVariant !== null && previousVariant !== variantSelect.value) {
+                window.MixpanelTracking.trackVariantChanged({
+                    previous_variant: previousVariant,
+                    new_variant: variantSelect.value,
+                    expandable: expandableCheck.checked,
+                    batch_actions: batchActionsCheck.checked
+                });
+            }
+            previousVariant = variantSelect.value;
+            updateConfigState();
+        });
+        
+        paginationSelect.addEventListener('change', () => {
+            if (window.MixpanelTracking && previousPaginationType !== null && previousPaginationType !== paginationSelect.value) {
+                const paginationData = getPaginationData();
+                window.MixpanelTracking.trackPaginationChanged({
+                    pagination_type: paginationSelect.value,
+                    previous_type: previousPaginationType,
+                    items_per_page: paginationData.itemsPerPage || null,
+                    total_items: paginationData.totalItems || null,
+                    current_page: paginationData.currentPage || null
+                });
+            }
+            previousPaginationType = paginationSelect.value;
+            updatePaginationFields();
+        });
+        
         expandableCheck.addEventListener('change', () => {
              if (expandableCheck.checked && batchActionsCheck.checked) {
                  batchActionsCheck.checked = false;
@@ -784,30 +1108,79 @@
         // Actions
         window.addColumn = () => {
             if (data[0] && data[0].length >= 12) return;
+            const oldCols = data[0] ? data[0].length : 0;
             data = data.map((row, index) => [...row, index === 0 ? 'Header' : 'Content']);
             if (data.length === 0) data.push(['Header']);
             render();
+            
+            // Track grid editor action
+            if (window.MixpanelTracking) {
+                window.MixpanelTracking.trackGridEditorAction({
+                    action_type: 'add_column',
+                    rows_count: data.length,
+                    columns_count: oldCols,
+                    new_rows_count: data.length,
+                    new_columns_count: data[0] ? data[0].length : 0
+                });
+            }
         };
 
         window.addRow = () => {
             if (data.length >= 13) return;
+            const oldRows = data.length;
             const cols = data[0] ? data[0].length : 0;
             const newRow = Array(cols).fill('Content');
             data.push(newRow);
             render();
+            
+            // Track grid editor action
+            if (window.MixpanelTracking) {
+                window.MixpanelTracking.trackGridEditorAction({
+                    action_type: 'add_row',
+                    rows_count: oldRows,
+                    columns_count: cols,
+                    new_rows_count: data.length,
+                    new_columns_count: cols
+                });
+            }
         };
 
         window.removeColumn = (index) => {
             if (data[0] && data[0].length <= 1) return;
+            const oldCols = data[0] ? data[0].length : 0;
             data = data.map(row => row.filter((_, i) => i !== index));
             render();
+            
+            // Track grid editor action
+            if (window.MixpanelTracking) {
+                window.MixpanelTracking.trackGridEditorAction({
+                    action_type: 'remove_column',
+                    rows_count: data.length,
+                    columns_count: oldCols,
+                    new_rows_count: data.length,
+                    new_columns_count: data[0] ? data[0].length : 0
+                });
+            }
         };
 
         window.removeRow = (index) => {
             if (index === 0) return; // Header
             if (data.length <= 1) return;
+            const oldRows = data.length;
+            const cols = data[0] ? data[0].length : 0;
             data = data.filter((_, i) => i !== index);
             render();
+            
+            // Track grid editor action
+            if (window.MixpanelTracking) {
+                window.MixpanelTracking.trackGridEditorAction({
+                    action_type: 'remove_row',
+                    rows_count: oldRows,
+                    columns_count: cols,
+                    new_rows_count: data.length,
+                    new_columns_count: cols
+                });
+            }
         };
 
         window.updateCell = (r, c, value) => {
@@ -830,25 +1203,92 @@
         }
 
         if (fetchBtn) {
-            fetchBtn.onclick = () => {
-                parent.postMessage({ pluginMessage: { type: 'fetch-table-data' } }, '*');
-            };
+        fetchBtn.onclick = () => {
+                // Track button click
+                if (window.MixpanelTracking) {
+                    window.MixpanelTracking.trackButtonClicked({
+                        button_id: 'fetch-btn',
+                        button_label: 'Fetch table data',
+                        feature_context: 'table_fetch',
+                        community_file_button_clicked: false
+                    });
+                }
+                
+            parent.postMessage({ pluginMessage: { type: 'fetch-table-data' } }, '*');
+        };
         }
 
         actionBtn.onclick = () => {
+            const startTime = Date.now();
             const rows = data.length;
             const cols = data[0] ? data[0].length : 0;
+            const isModify = validTableSelected;
+            const variant = variantSelect.value;
+            const paginationData = getPaginationData();
+            
+            // Track button click
+            if (window.MixpanelTracking) {
+                window.MixpanelTracking.trackButtonClicked({
+                    button_id: 'action-btn',
+                    button_label: isModify ? 'Modify Table' : 'Insert Table',
+                    feature_context: isModify ? 'table_modify' : 'table_insert',
+                    community_file_button_clicked: false
+                });
+            }
+            
             parent.postMessage({ 
                 pluginMessage: { 
-                    type: validTableSelected ? 'modify-table' : 'insert-table',
+                    type: isModify ? 'modify-table' : 'insert-table',
                     rows,
                     columns: cols,
                     cells: data,
                     componentKey: getComponentKey(),
                     paginationKey: getPaginationKey(),
-                    paginationData: getPaginationData()
+                    paginationData: paginationData
                 } 
             }, '*');
+            
+            // Track table insert/modify after operation completes
+            setTimeout(() => {
+                const executionTime = Date.now() - startTime;
+                if (window.MixpanelTracking) {
+                    if (isModify) {
+                        // Track table modified
+                        window.MixpanelTracking.trackTableModified({
+                            rows_count: rows,
+                            columns_count: cols,
+                            variant: variant,
+                            variant_changed: false, // Would need to track previous state
+                            rows_changed: false, // Would need to track previous state
+                            columns_changed: false, // Would need to track previous state
+                            pagination_changed: false, // Would need to track previous state
+                            execution_time_ms: executionTime,
+                            selection_count: 1
+                        });
+                    } else {
+                        // Track table inserted
+                        window.MixpanelTracking.trackTableInserted({
+                            rows_count: rows,
+                            columns_count: cols,
+                            variant: variant,
+                            expandable: expandableCheck.checked,
+                            batch_actions: batchActionsCheck.checked,
+                            pagination_type: paginationData.type,
+                            table_cells: data,
+                            execution_time_ms: executionTime
+                        });
+                    }
+                    
+                    // Track performance
+                    window.MixpanelTracking.trackPerformanceMetric({
+                        operation_name: isModify ? 'modify_table' : 'insert_table',
+                        duration_ms: executionTime,
+                        selection_size: isModify ? 1 : 0,
+                        rows_count: rows,
+                        columns_count: cols
+                    });
+                }
+            }, 100);
         };
 
         // File Parsing Functions
@@ -937,6 +1377,15 @@
         // File Upload Handler
         if (uploadBtn && fileInput) {
             uploadBtn.onclick = () => {
+                // Track button click
+                if (window.MixpanelTracking) {
+                    window.MixpanelTracking.trackButtonClicked({
+                        button_id: 'upload-btn',
+                        button_label: 'Upload .csv/.xlsx/.json',
+                        feature_context: 'file_upload',
+                        community_file_button_clicked: false
+                    });
+                }
                 fileInput.click();
             };
 
@@ -944,12 +1393,23 @@
                 const file = e.target.files[0];
                 if (!file) return;
 
+                const startTime = Date.now();
                 const MAX_FILE_SIZE = 50 * 1024; // 50KB in bytes
                 const fileExtension = file.name.split('.').pop().toLowerCase();
                 const allowedExtensions = ['csv', 'xlsx', 'json'];
+                const fileSizeKB = (file.size / 1024).toFixed(2);
 
                 // Validate file type
                 if (!allowedExtensions.includes(fileExtension)) {
+                    if (window.MixpanelTracking) {
+                        window.MixpanelTracking.trackPluginError({
+                            error_message: 'Invalid file type',
+                            error_stack: null,
+                            operation: 'file_upload_validation',
+                            selection_count: 0,
+                            node_types: []
+                        });
+                    }
                     parent.postMessage({
                         pluginMessage: {
                             type: 'notify',
@@ -962,10 +1422,19 @@
 
                 // Validate file size
                 if (file.size > MAX_FILE_SIZE) {
+                    if (window.MixpanelTracking) {
+                        window.MixpanelTracking.trackPluginError({
+                            error_message: `File size exceeds 50KB limit. File size: ${fileSizeKB}KB`,
+                            error_stack: null,
+                            operation: 'file_upload_validation',
+                            selection_count: 0,
+                            node_types: []
+                        });
+                    }
                     parent.postMessage({
                         pluginMessage: {
                             type: 'notify',
-                            message: `File size exceeds 50KB limit. File size: ${(file.size / 1024).toFixed(2)}KB`
+                            message: `File size exceeds 50KB limit. File size: ${fileSizeKB}KB`
                         }
                     }, '*');
                     fileInput.value = '';
@@ -977,6 +1446,7 @@
                 reader.onload = async (e) => {
                     try {
                         let rows = [];
+                        let parseStartTime = Date.now();
                         
                         if (fileExtension === 'csv') {
                             rows = parseCSV(e.target.result);
@@ -999,6 +1469,15 @@
                                 rows = XLSXLib.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
                                 rows = rows.map(row => row.map(cell => String(cell || '')));
                             } catch (error) {
+                                if (window.MixpanelTracking) {
+                                    window.MixpanelTracking.trackPluginError({
+                                        error_message: `Error loading XLSX library: ${error.message}`,
+                                        error_stack: error.stack || null,
+                                        operation: 'parse_xlsx',
+                                        selection_count: 0,
+                                        node_types: []
+                                    });
+                                }
                                 parent.postMessage({
                                     pluginMessage: {
                                         type: 'notify',
@@ -1011,6 +1490,20 @@
                         }
 
                         if (rows.length === 0) {
+                            if (window.MixpanelTracking) {
+                                window.MixpanelTracking.trackFileUploaded({
+                                    file_type: fileExtension,
+                                    file_size_kb: parseFloat(fileSizeKB),
+                                    rows_parsed: 0,
+                                    columns_parsed: 0,
+                                    rows_loaded: 0,
+                                    columns_loaded: 0,
+                                    data_truncated: false,
+                                    execution_time_ms: Date.now() - startTime,
+                                    success: false,
+                                    error_message: 'No data found in file'
+                                });
+                            }
                             parent.postMessage({
                                 pluginMessage: {
                                     type: 'notify',
@@ -1021,6 +1514,8 @@
                             return;
                         }
 
+                        const rowsParsed = rows.length;
+                        const colsParsed = rows[0] ? rows[0].length : 0;
                         const normalized = normalizeData(rows);
                         const limited = limitData(normalized);
                         
@@ -1028,8 +1523,45 @@
                             limited.push(['Header']);
                         }
 
-                        data = limited;
-                        render();
+                        const executionTime = Date.now() - startTime;
+                        const parseTime = Date.now() - parseStartTime;
+                        const dataTruncated = rowsParsed > 13 || colsParsed > 12;
+
+                data = limited;
+                
+                // Update table cells for tracking
+                if (window.MixpanelTracking) {
+                    window.MixpanelTracking.setTableCells(data);
+                }
+                
+                render();
+                
+                // Track file uploaded
+                        if (window.MixpanelTracking) {
+                            window.MixpanelTracking.trackFileUploaded({
+                                file_type: fileExtension,
+                                file_size_kb: parseFloat(fileSizeKB),
+                                rows_parsed: rowsParsed,
+                                columns_parsed: colsParsed,
+                                rows_loaded: limited.length,
+                                columns_loaded: limited[0] ? limited[0].length : 0,
+                                data_truncated: dataTruncated,
+                                execution_time_ms: executionTime,
+                                success: true,
+                                error_message: null
+                            });
+                            
+                            // Track performance
+                            window.MixpanelTracking.trackPerformanceMetric({
+                                operation_name: `parse_${fileExtension}`,
+                                duration_ms: parseTime,
+                                selection_size: 0,
+                                rows_count: rowsParsed,
+                                columns_count: colsParsed,
+                                file_size_kb: parseFloat(fileSizeKB),
+                                file_type: fileExtension
+                            });
+                        }
                         
                         parent.postMessage({
                             pluginMessage: {
@@ -1039,6 +1571,15 @@
                         }, '*');
                         fileInput.value = '';
                     } catch (error) {
+                        if (window.MixpanelTracking) {
+                            window.MixpanelTracking.trackPluginError({
+                                error_message: `Error parsing file: ${error.message}`,
+                                error_stack: error.stack || null,
+                                operation: `parse_${fileExtension}`,
+                                selection_count: 0,
+                                node_types: []
+                            });
+                        }
                         parent.postMessage({
                             pluginMessage: {
                                 type: 'notify',
@@ -1072,7 +1613,25 @@
             const msg = event.data.pluginMessage;
             if (!msg) return;
             
-            if (msg.type === 'selection-status') {
+            if (msg.type === 'plugin-context') {
+                // Track plugin_opened with context
+                if (window.MixpanelTracking) {
+                    window.MixpanelTracking.trackPluginOpened({
+                        file_key: msg.file_key,
+                        page_name: msg.page_name,
+                        selection_count: msg.selection_count,
+                        node_types: msg.node_types,
+                        anonymous_user_id: msg.anonymous_user_id,
+                        is_first_time_user: msg.is_first_time_user
+                    });
+                }
+            } else if (msg.type === 'anonymous-user-id') {
+                // Update context with user ID
+                if (window.MIXPANEL_SESSION && window.MIXPANEL_SESSION.context) {
+                    window.MIXPANEL_SESSION.context.anonymous_user_id = msg.anonymous_user_id;
+                    window.MIXPANEL_SESSION.context.is_first_time_user = msg.is_first_time_user;
+                }
+            } else if (msg.type === 'selection-status') {
                 validTableSelected = msg.validTableSelected;
                 updateActionButton();
             } else if (msg.type === 'library-status') {
@@ -1083,11 +1642,29 @@
                     document.body.classList.add('has-warning');
                     warningCallout.classList.add('visible');
                     carbonLink.href = msg.libraryUrl;
+                    
+                    // Track community file button click
+                    if (carbonLink && !carbonLink.hasAttribute('data-tracked')) {
+                        carbonLink.setAttribute('data-tracked', 'true');
+                        carbonLink.addEventListener('click', () => {
+                            if (window.MixpanelTracking) {
+                                window.MixpanelTracking.markCommunityFileButtonClicked();
+                                window.MixpanelTracking.trackButtonClicked({
+                                    button_id: 'carbon-link',
+                                    button_label: 'Open Community File',
+                                    feature_context: 'library_setup',
+                                    community_file_button_clicked: true
+                                });
+                            }
+                        });
+                    }
                 } else {
                     document.body.classList.remove('has-warning');
                     warningCallout.classList.remove('visible');
                 }
             } else if (msg.type === 'table-data-fetched') {
+                const startTime = Date.now();
+                
                 variantSelect.value = msg.config.variant;
                 expandableCheck.checked = msg.config.expandable || false;
                 batchActionsCheck.checked = msg.config.batchActions || false;
@@ -1105,13 +1682,59 @@
                 }
 
                 data = msg.cells || [];
+                
+                // Update table cells for tracking
+                if (window.MixpanelTracking) {
+                    window.MixpanelTracking.setTableCells(data);
+                }
+                
                 render();
+                
+                // Track table_data_fetched
+                if (window.MixpanelTracking) {
+                    const executionTime = Date.now() - startTime;
+                    window.MixpanelTracking.trackTableDataFetched({
+                        rows_fetched: data.length,
+                        columns_fetched: data[0] ? data[0].length : 0,
+                        variant: msg.config.variant,
+                        pagination_type: msg.paginationData.type,
+                        execution_time_ms: executionTime,
+                        selection_count: 1,
+                        success: true
+                    });
+                    
+                    // Track performance
+                    window.MixpanelTracking.trackPerformanceMetric({
+                        operation_name: 'fetch_table_data',
+                        duration_ms: executionTime,
+                        selection_size: 1,
+                        rows_count: data.length,
+                        columns_count: data[0] ? data[0].length : 0
+                    });
+                }
             }
         };
+        
+        // Track plugin_closed on beforeunload
+        window.addEventListener('beforeunload', () => {
+            if (window.MixpanelTracking) {
+                window.MixpanelTracking.trackPluginClosed(data);
+            }
+        });
+
+        // Initialize previous values for tracking
+        previousVariant = variantSelect.value;
+        previousPaginationType = paginationSelect.value;
+        
+        // Set table cells for plugin_closed tracking
+        if (window.MixpanelTracking) {
+            window.MixpanelTracking.setTableCells(data);
+        }
 
         // Initial Render
         render();
 
     </script>
 </body>
+</html>
 </html>
