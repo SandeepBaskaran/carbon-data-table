@@ -67,6 +67,12 @@ interface PluginMessage {
     message?: string;
     anonymousUserId?: string;
     isFirstTimeUser?: boolean;
+    width?: number;
+    height?: number;
+    prompt?: string;
+    requestedRows?: number | null;
+    requestedCols?: number | null;
+    requestId?: string;
 }
 
 // State
@@ -93,7 +99,7 @@ async function safeGetMainComponent(instance: InstanceNode): Promise<ComponentNo
     if (!isLibraryEnabled) {
         return null;
     }
-    
+
     // Double-wrap to catch WebAssembly errors that might bypass normal catch
     try {
         try {
@@ -299,7 +305,7 @@ function extractBodyTextSafe(colNode: SceneNode & ChildrenMixin): string {
 async function findExistingTableInstance(): Promise<InstanceNode | null> {
     const selection = figma.currentPage.selection;
     if (selection.length !== 1 || selection[0].type !== "INSTANCE") return null;
-    
+
     // Early return if library is not enabled to prevent WebAssembly crashes
     if (!isLibraryEnabled) {
         return null;
@@ -330,7 +336,7 @@ async function fetchTableData(instance: InstanceNode): Promise<void> {
             figma.notify("Cannot access table data. Please ensure library is enabled.", { error: true });
             return;
         }
-        
+
         const key = mainComponent.key || "";
         const config: TableConfig = KEY_TO_CONFIG[key] || { variant: 'default', expandable: false, batchActions: false };
 
@@ -440,7 +446,7 @@ async function updatePagination(instance: InstanceNode, paginationKey: string, p
             if (!currentComponent) {
                 return; // Library not accessible
             }
-            
+
             if (currentComponent.key !== paginationKey) {
                 try {
                     const newPaginationMaster = await figma.importComponentByKeyAsync(paginationKey);
@@ -609,11 +615,8 @@ async function insertTable(rows: number, columns: number, cells: string[][], com
         figma.currentPage.selection = [instance];
         figma.viewport.scrollAndZoomIntoView([instance]);
         figma.notify("Table inserted successfully.");
-    } catch (error: any) {
-        // Only log unexpected errors (not permission/library errors)
-        if (!isExpectedError(error)) {
-            // Unexpected error - could log here if needed for debugging, but keeping silent for production
-        }
+        } catch (error: any) {
+            // Handle errors appropriately
 
         if (isExpectedError(error)) {
             isLibraryEnabled = false;
@@ -642,7 +645,7 @@ async function modifyTable(instance: InstanceNode, rows: number, columns: number
                 // Library not accessible, already handled in safeGetMainComponent
                 return;
             }
-            
+
             if (mainComponent.key !== componentKey) {
                 try {
                     const newMaster = await figma.importComponentByKeyAsync(componentKey);
@@ -680,9 +683,7 @@ async function modifyTable(instance: InstanceNode, rows: number, columns: number
         }
 
     } catch (error: any) {
-        // Only handle unexpected errors here
         if (!isExpectedError(error)) {
-            // Unexpected error - could log here if needed for debugging, but keeping silent for production
             figma.notify("Failed to update table variant.", { error: true });
         }
         return;
@@ -694,24 +695,49 @@ async function modifyTable(instance: InstanceNode, rows: number, columns: number
 }
 
 // Initialization
-// Removed checkLibraryAvailability to prevent "Invalid metric" errors on startup
-
-
 figma.showUI(__html__, {
     width: 1250,
     height: 650,
     themeColors: true
 });
 
+// Initialize library status - strictly check if library is accessible
 (async () => {
-    // Optimistically assume library is enabled to prevent startup errors
-    // The error will be caught and handled if the user tries to insert/modify
-    isLibraryEnabled = true;
-    figma.ui.postMessage({
-        type: "library-status",
-        isEnabled: isLibraryEnabled,
-        libraryUrl: CARBON_LIBRARY_URL
-    });
+    // Start with library disabled until we can verify it's accessible
+    isLibraryEnabled = false;
+    
+    try {
+        // Try to import a component to verify library is accessible
+        // Use the first valid table key as a test
+        const testComponent = await figma.importComponentByKeyAsync(VALID_TABLE_KEYS[0]);
+        
+        // Only mark as enabled if we successfully get a valid component
+        if (testComponent && testComponent.type === 'COMPONENT') {
+            isLibraryEnabled = true;
+            figma.ui.postMessage({
+                type: "library-status",
+                isEnabled: true,
+                libraryUrl: CARBON_LIBRARY_URL
+            });
+        } else {
+            // Component import succeeded but returned invalid result - library not properly accessible
+            isLibraryEnabled = false;
+            figma.ui.postMessage({
+                type: "library-status",
+                isEnabled: false,
+                libraryUrl: CARBON_LIBRARY_URL
+            });
+        }
+    } catch (error: any) {
+        // Any error means library is not accessible - strict check
+        // This includes both expected errors (permission/library) and unexpected errors
+        isLibraryEnabled = false;
+        figma.ui.postMessage({
+            type: "library-status",
+            isEnabled: false,
+            libraryUrl: CARBON_LIBRARY_URL
+        });
+    }
 })();
 
 // Event Handlers
@@ -723,8 +749,6 @@ figma.on("selectionchange", async () => {
             validTableSelected: !!instance
         });
     } catch (error: any) {
-        // Silently handle any errors during selection change to prevent WebAssembly crashes
-        // This includes WebAssembly memory errors that might not be caught elsewhere
         if (isExpectedError(error)) {
             isLibraryEnabled = false;
             figma.ui.postMessage({
@@ -733,7 +757,6 @@ figma.on("selectionchange", async () => {
                 libraryUrl: CARBON_LIBRARY_URL
             });
         }
-        // Always send a message to UI even on error to prevent UI from hanging
         figma.ui.postMessage({
             type: "selection-status",
             validTableSelected: false
@@ -741,6 +764,7 @@ figma.on("selectionchange", async () => {
     }
 });
 
+// Message Handler
 figma.ui.onmessage = async (msg: PluginMessage) => {
     if (msg.type === 'get-plugin-context') {
         const context = await getPluginContext();
@@ -778,7 +802,104 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
         } else {
             figma.notify("Select a table component to fetch data from.");
         }
+    } else if (msg.type === 'resize') {
+        if (msg.width && msg.height) {
+            figma.ui.resize(msg.width, msg.height);
+        }
     } else if (msg.type === 'notify' && msg.message) {
         figma.notify(msg.message);
+    } else if (msg.type === 'generate-ai-table') {
+        const { prompt, requestedRows = null, requestedCols = null, requestId } = msg;
+        if (prompt) {
+            // Notify UI that generation has started
+            figma.ui.postMessage({
+                type: 'ai-generation-started',
+                requestId: requestId || `ai_${Date.now()}`
+            });
+            generateAITable(prompt, requestedRows, requestedCols, requestId).catch((error: any) => {
+                figma.notify(`AI generation error: ${error.message}`, { error: true });
+            });
+        } else {
+            figma.notify('No prompt provided', { error: true });
+        }
     }
 };
+
+// AI Table Generation (via Vercel proxy server)
+async function generateAITable(prompt: string, requestedRows: number | null, requestedCols: number | null, requestId?: string) {
+    const apiStartTime = Date.now();
+    try {
+        const PROXY_URL = 'https://carbon-data-table-server.vercel.app/api/generate-table';
+        
+        // Default to 6 columns and 5 data rows when not specified
+        const rows = requestedRows ?? 5;
+        const cols = requestedCols ?? 6;
+
+        const response = await fetch(PROXY_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                prompt,
+                rows: rows,
+                cols: cols
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Proxy request failed (${response.status})`);
+        }
+
+        const result = await response.json();
+
+        if (!result.success || !result.data) {
+            throw new Error(result.error || 'Failed to generate table data');
+        }
+
+        let tableData: string[][] = result.data;
+        if (!Array.isArray(tableData) || tableData.length === 0) {
+            throw new Error('Invalid table data format');
+        }
+
+        tableData = tableData.slice(0, 13).map(row => {
+            if (!Array.isArray(row)) return [];
+            return row.slice(0, 12).map(cell => String(cell || ''));
+        });
+
+        const maxCols = Math.max(...tableData.map(row => row.length));
+        const normalizedData = tableData.map(row => {
+            const normalized = [...row];
+            while (normalized.length < maxCols) normalized.push('');
+            return normalized;
+        });
+
+        const apiResponseTime = Date.now() - apiStartTime;
+        const parsingTime = 5; // Estimated parsing time (minimal)
+
+        // Send data back to UI
+        figma.ui.postMessage({
+            type: 'ai-table-generated',
+            tableData: normalizedData,
+            success: true,
+            requestId: requestId,
+            apiResponseTime: apiResponseTime,
+            dataParsingTime: parsingTime
+        });
+
+        figma.notify(`Generated ${normalizedData.length - 1} rows with ${normalizedData[0].length} columns`);
+
+    } catch (error: any) {
+        const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+        const generationTime = Date.now() - apiStartTime;
+        figma.ui.postMessage({
+            type: 'ai-table-generated',
+            success: false,
+            error: errorMessage,
+            requestId: requestId,
+            generationTime: generationTime
+        });
+        figma.notify(`AI generation failed: ${errorMessage}`);
+    }
+}

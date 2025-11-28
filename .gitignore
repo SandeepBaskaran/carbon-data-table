@@ -28,3 +28,9 @@ release/
 *.zip
 carbon-data-table-*.zip
 
+# Documentation/Planning files (keep in chat, not in repo)
+CODEBASE_AUDIT.md
+
+# Server folder (separate private repository)
+carbon-data-table-server/
+

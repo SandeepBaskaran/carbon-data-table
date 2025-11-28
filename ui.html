@@ -325,6 +325,28 @@
             text-decoration: underline;
         }
     /* Additional Styles */
+        #resize-handle {
+            position: fixed;
+            bottom: 2px;
+            right: 2px;
+            width: 16px;
+            height: 16px;
+            cursor: nwse-resize;
+            z-index: 1000;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.5;
+            transition: opacity 0.2s;
+        }
+        #resize-handle:hover {
+            opacity: 1;
+        }
+        #resize-handle svg {
+            width: 12px;
+            height: 12px;
+        }
         /* ... existing styles ... */
         /* Add these new styles */
         
@@ -450,6 +472,145 @@
         body.has-warning .footer {
             display: none;
         }
+
+        /* AI Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.visible {
+            display: flex;
+        }
+
+        .modal-container {
+            background-color: var(--bg);
+            border-radius: 8px;
+            width: 90%;
+            max-width: 480px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            color: var(--text);
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .modal-field {
+            margin-bottom: 16px;
+        }
+
+        .modal-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text);
+            margin-bottom: 6px;
+        }
+
+        .modal-textarea {
+            width: 100%;
+            min-height: 80px;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 11px;
+            resize: vertical;
+            outline: none;
+        }
+
+        .modal-textarea:focus {
+            border-color: var(--brand);
+        }
+
+        .modal-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .modal-col {
+            flex: 1;
+        }
+
+        .modal-checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+            font-size: 11px;
+        }
+
+        .modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-footer-text {
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+
+        .modal-footer-text a {
+            color: var(--brand);
+            text-decoration: none;
+        }
+
+         .modal-footer-text a:hover {
+             text-decoration: underline;
+         }
+
+         .loading-dots {
+             display: inline-block;
+             min-width: 12px;
+             text-align: left;
+        }
     </style>
 </head>
 <body>
@@ -520,6 +681,12 @@
                 <input type="checkbox" id="batch-actions-check">
                 <label for="batch-actions-check">Show Batch Actions</label>
             </div>
+            <div class="config-group">
+                <label for="sort-select">Sort table by:</label>
+                <select id="sort-select" class="input-select">
+                    <option value="none">None</option>
+                </select>
+            </div>
         </div>
 
         <!-- Table Builder -->
@@ -552,10 +719,55 @@
         <div class="footer-left">
             <input type="file" id="file-input" accept=".csv,.xlsx,.json" style="display: none;">
             <button id="upload-btn" class="button button-secondary">Upload .csv/.xlsx/.json</button>
+            <button id="ai-generate-btn" class="button button-secondary">Generate with AI</button>
         </div>
         <div class="footer-right">
         <button id="fetch-btn" class="button button-secondary" style="display: none;">Fetch table data</button>
         <button id="action-btn" class="button">Insert Table</button>
+        </div>
+    </div>
+
+    <!-- AI Generation Modal -->
+    <div id="ai-modal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div class="modal-title">Generate Table Data with AI</div>
+                <button id="modal-close" class="modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-field">
+                    <label class="modal-label" for="ai-prompt">Describe the table you want to generate</label>
+                    <textarea id="ai-prompt" class="modal-textarea" placeholder="e.g., Generate a table of top 10 smartphones with their specs"></textarea>
+                </div>
+                <div class="modal-row">
+                    <div class="modal-col">
+                        <div class="modal-field">
+                            <label class="modal-label" for="ai-rows">Rows</label>
+                            <input type="number" id="ai-rows" class="input-text" value="0" min="1" max="13" disabled>
+                            <div class="modal-checkbox-group">
+                                <input type="checkbox" id="ai-rows-auto" checked>
+                                <label for="ai-rows-auto">Let AI decide</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-col">
+                        <div class="modal-field">
+                            <label class="modal-label" for="ai-cols">Columns</label>
+                            <input type="number" id="ai-cols" class="input-text" value="0" min="1" max="12" disabled>
+                            <div class="modal-checkbox-group">
+                                <input type="checkbox" id="ai-cols-auto" checked>
+                                <label for="ai-cols-auto">Let AI decide</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="modal-footer-text">
+                    Powered by <a href="https://dataplatform.cloud.ibm.com/" target="_blank">watsonx ai</a> by IBM
+                </div>
+                <button id="ai-generate-submit" class="button" disabled>Generate table data</button>
+            </div>
         </div>
     </div>
 
@@ -571,7 +783,10 @@
             tableCells: null,
             context: null,
             communityFileButtonClicked: false,
-            pluginClosedTracked: false
+            pluginClosedTracked: false,
+            aiModalOpenTime: null,
+            aiGenerationRequestId: null,
+            aiGenerationStartTime: null
         };
 
 
@@ -588,19 +803,23 @@
             BUTTON_CLICKED: 'button_clicked',
             GRID_EDITOR_ACTION: 'grid_editor_action',
             PLUGIN_ERROR: 'plugin_error',
-            PERFORMANCE_METRIC: 'performance_metric'
+            PERFORMANCE_METRIC: 'performance_metric',
+            // AI Generation Events
+            AI_GENERATION_REQUESTED: 'ai_generation_requested',
+            AI_GENERATION_STARTED: 'ai_generation_started',
+            AI_GENERATION_COMPLETED: 'ai_generation_completed',
+            AI_GENERATION_FAILED: 'ai_generation_failed',
+            // File Operation Events
+            FILE_UPLOAD_STARTED: 'file_upload_started',
+            FILE_PARSE_COMPLETED: 'file_parse_completed',
+            FILE_PARSE_FAILED: 'file_parse_failed',
+            // User Engagement Events
+            AI_MODAL_OPENED: 'ai_modal_opened',
+            AI_MODAL_CLOSED: 'ai_modal_closed'
         };
 
-        // Mixpanel Configuration
-        const MIXPANEL_TOKEN = 'cb70c14367e01956789be2d75d81ca91';
-        
-        // Helper to base64 encode for Mixpanel
-        function base64Encode(str) {
-            return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g,
-                function toSolidBytes(match, p1) {
-                    return String.fromCharCode('0x' + p1);
-            }));
-        }
+        // Mixpanel Proxy Configuration (token is now on server)
+        const MIXPANEL_PROXY_URL = 'https://carbon-data-table-server.vercel.app/api/track-event';
 
         // Helper Functions
         window.MixpanelTracking = {
@@ -812,9 +1031,114 @@
                 };
                 this.trackEvent(window.MIXPANEL_EVENTS.PERFORMANCE_METRIC, properties);
             },
+            // AI Generation Events
+            trackAIGenerationRequested: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    prompt_length: data.prompt_length || 0,
+                    prompt_preview: data.prompt_preview || '',
+                    requested_rows: data.requested_rows !== undefined ? data.requested_rows : null,
+                    requested_cols: data.requested_cols !== undefined ? data.requested_cols : null,
+                    ai_decided_rows: data.ai_decided_rows || false,
+                    ai_decided_cols: data.ai_decided_cols || false,
+                    session_actions: [...window.MIXPANEL_SESSION.actions],
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.AI_GENERATION_REQUESTED, properties);
+            },
+            trackAIGenerationStarted: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    request_id: data.request_id || '',
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.AI_GENERATION_STARTED, properties);
+            },
+            trackAIGenerationCompleted: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    request_id: data.request_id || '',
+                    generated_rows: data.generated_rows || 0,
+                    generated_cols: data.generated_cols || 0,
+                    generation_time_ms: data.generation_time_ms || 0,
+                    api_response_time_ms: data.api_response_time_ms || null,
+                    data_parsing_time_ms: data.data_parsing_time_ms || null,
+                    prompt_tokens: data.prompt_tokens || null,
+                    response_tokens: data.response_tokens || null,
+                    success: true,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.AI_GENERATION_COMPLETED, properties);
+            },
+            trackAIGenerationFailed: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    request_id: data.request_id || '',
+                    error_type: data.error_type || 'unknown',
+                    error_message: data.error_message || '',
+                    error_code: data.error_code || null,
+                    generation_time_ms: data.generation_time_ms || 0,
+                    retry_attempt: data.retry_attempt || 0,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.AI_GENERATION_FAILED, properties);
+            },
+            // File Operation Events
+            trackFileUploadStarted: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    file_type: data.file_type || '',
+                    file_size_kb: data.file_size_kb || 0,
+                    file_name: data.file_name || '',
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.FILE_UPLOAD_STARTED, properties);
+            },
+            trackFileParseCompleted: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    file_type: data.file_type || '',
+                    parsed_rows: data.parsed_rows || 0,
+                    parsed_cols: data.parsed_cols || 0,
+                    parse_time_ms: data.parse_time_ms || 0,
+                    validation_errors: data.validation_errors || 0,
+                    truncated: data.truncated || false,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.FILE_PARSE_COMPLETED, properties);
+            },
+            trackFileParseFailed: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    file_type: data.file_type || '',
+                    error_type: data.error_type || 'unknown',
+                    error_message: data.error_message || '',
+                    file_size_kb: data.file_size_kb || 0,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.FILE_PARSE_FAILED, properties);
+            },
+            // User Engagement Events
+            trackAIModalOpened: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    trigger_method: data.trigger_method || 'button_click',
+                    session_actions: [...window.MIXPANEL_SESSION.actions],
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.AI_MODAL_OPENED, properties);
+            },
+            trackAIModalClosed: function(data) {
+                const properties = {
+                    ...this.getBaseProperties(),
+                    was_generation_successful: data.was_generation_successful || false,
+                    time_in_modal_ms: data.time_in_modal_ms || 0,
+                    closed_without_generating: data.closed_without_generating || false,
+                    timestamp: new Date().toISOString()
+                };
+                this.trackEvent(window.MIXPANEL_EVENTS.AI_MODAL_CLOSED, properties);
+            },
             trackEvent: function(eventName, properties = {}, useBeacon = false) {
-                if (!MIXPANEL_TOKEN) return;
-
                 // Get anonymous user ID from context or session
                 const distinctId = window.MIXPANEL_SESSION.context?.anonymous_user_id || 
                                  'anonymous_' + Math.random().toString(36).substr(2, 9);
@@ -822,28 +1146,26 @@
                 const payload = {
                     event: eventName,
                     properties: {
-                        token: MIXPANEL_TOKEN,
                         distinct_id: distinctId,
                         ...properties
                     }
                 };
 
-                const data = base64Encode(JSON.stringify(payload));
-                const url = `https://api.mixpanel.com/track?data=${data}`;
-
                 // Use sendBeacon for reliable delivery during page unload (plugin_closed)
                 if (useBeacon && navigator.sendBeacon) {
                     try {
-                        const blob = new Blob([`data=${data}`], { type: 'application/x-www-form-urlencoded' });
-                        const sent = navigator.sendBeacon(url, blob);
+                        const blob = new Blob([JSON.stringify(payload)], { 
+                            type: 'application/json' 
+                        });
+                        const sent = navigator.sendBeacon(MIXPANEL_PROXY_URL, blob);
                         if (!sent) {
                             // Fallback to fetch if sendBeacon fails
-                            fetch(url, {
+                            fetch(MIXPANEL_PROXY_URL, {
                                 method: 'POST',
                                 headers: {
-                                    'Content-Type': 'application/x-www-form-urlencoded'
+                                    'Content-Type': 'application/json'
                                 },
-                                body: `data=${data}`,
+                                body: JSON.stringify(payload),
                                 keepalive: true
                             }).catch(() => {});
                         }
@@ -854,12 +1176,12 @@
                 }
 
                 // Use fetch with keepalive for normal events
-                fetch(url, {
-                    method: 'POST', // Using POST to avoid URL length limits, though GET is also common
+                fetch(MIXPANEL_PROXY_URL, {
+                    method: 'POST',
                     headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
+                        'Content-Type': 'application/json'
                     },
-                    body: `data=${data}`,
+                    body: JSON.stringify(payload),
                     keepalive: true
                 }).catch(() => {});
             },
@@ -949,6 +1271,161 @@
         const paginationSimpleFields = document.getElementById('pagination-simple-fields');
         const uploadBtn = document.getElementById('upload-btn');
         const fileInput = document.getElementById('file-input');
+        const sortSelect = document.getElementById('sort-select');
+        const aiGenerateBtn = document.getElementById('ai-generate-btn');
+        const aiModal = document.getElementById('ai-modal');
+        const modalClose = document.getElementById('modal-close');
+        const aiPrompt = document.getElementById('ai-prompt');
+        const aiRows = document.getElementById('ai-rows');
+        const aiCols = document.getElementById('ai-cols');
+        const aiRowsAuto = document.getElementById('ai-rows-auto');
+        const aiColsAuto = document.getElementById('ai-cols-auto');
+        const aiGenerateSubmit = document.getElementById('ai-generate-submit');
+
+        // AI Modal Logic
+        function openAIModal() {
+            aiModal.classList.add('visible');
+            window.MIXPANEL_SESSION.aiModalOpenTime = Date.now();
+            
+            // Track modal opened
+            if (window.MixpanelTracking) {
+                window.MixpanelTracking.trackAIModalOpened({
+                    trigger_method: 'button_click'
+                });
+            }
+        }
+
+        function closeAIModal() {
+            const wasOpen = window.MIXPANEL_SESSION.aiModalOpenTime !== null;
+            const timeInModal = wasOpen ? Date.now() - window.MIXPANEL_SESSION.aiModalOpenTime : 0;
+            const wasSuccessful = window.MIXPANEL_SESSION.aiGenerationRequestId !== null && 
+                                 window.MIXPANEL_SESSION.actions.includes('ai_generation_completed');
+            
+            aiModal.classList.remove('visible');
+            
+            // Track modal closed
+            if (window.MixpanelTracking && wasOpen) {
+                window.MixpanelTracking.trackAIModalClosed({
+                    was_generation_successful: wasSuccessful,
+                    time_in_modal_ms: timeInModal,
+                    closed_without_generating: !window.MIXPANEL_SESSION.aiGenerationRequestId
+                });
+            }
+            
+            // Reset modal state
+            window.MIXPANEL_SESSION.aiModalOpenTime = null;
+        }
+
+        function validateAIPrompt() {
+            const hasPrompt = aiPrompt.value.trim().length > 0;
+            aiGenerateSubmit.disabled = !hasPrompt;
+        }
+
+        // AI Modal Event Listeners
+        aiGenerateBtn.addEventListener('click', () => {
+            openAIModal();
+            // Track button click
+            if (window.MixpanelTracking) {
+                window.MixpanelTracking.trackButtonClicked({
+                    button_id: 'ai-generate-btn',
+                    button_label: 'Generate with AI',
+                    feature_context: 'ai_generation',
+                    community_file_button_clicked: false
+                });
+            }
+        });
+
+        modalClose.addEventListener('click', closeAIModal);
+
+        aiModal.addEventListener('click', (e) => {
+            if (e.target === aiModal) {
+                closeAIModal();
+            }
+        });
+
+        aiPrompt.addEventListener('input', validateAIPrompt);
+
+        aiRowsAuto.addEventListener('change', () => {
+            aiRows.disabled = aiRowsAuto.checked;
+        });
+
+        aiColsAuto.addEventListener('change', () => {
+            aiCols.disabled = aiColsAuto.checked;
+        });
+
+
+
+        // Loading animation for AI generation - fixed text with animated dots
+        let loadingInterval = null;
+        let loadingDotsElement = null;
+        
+        function startLoadingAnimation() {
+            // Create a span for dots if it doesn't exist
+            if (!loadingDotsElement) {
+                aiGenerateSubmit.innerHTML = 'Generating<span class="loading-dots"></span>';
+                loadingDotsElement = aiGenerateSubmit.querySelector('.loading-dots');
+            } else {
+                aiGenerateSubmit.innerHTML = 'Generating<span class="loading-dots"></span>';
+                loadingDotsElement = aiGenerateSubmit.querySelector('.loading-dots');
+            }
+            
+            let dots = 0;
+            loadingInterval = setInterval(() => {
+                dots = (dots + 1) % 4;
+                if (loadingDotsElement) {
+                    loadingDotsElement.textContent = '.'.repeat(dots);
+                }
+            }, 500);
+        }
+
+        function stopLoadingAnimation() {
+            if (loadingInterval) {
+                clearInterval(loadingInterval);
+                loadingInterval = null;
+            }
+            aiGenerateSubmit.textContent = 'Generate table data';
+            loadingDotsElement = null;
+        }
+
+        aiGenerateSubmit.addEventListener('click', () => {
+            const prompt = aiPrompt.value.trim();
+            // Default to 6 columns and 5 data rows (plus 1 header = 6 total rows) when auto is selected
+            const requestedRows = aiRowsAuto.checked ? 5 : parseInt(aiRows.value);
+            const requestedCols = aiColsAuto.checked ? 6 : parseInt(aiCols.value);
+            
+            // Disable inputs and show loading state
+            aiGenerateSubmit.disabled = true;
+            aiPrompt.disabled = true;
+            startLoadingAnimation();
+            
+            // Generate unique request ID
+            const requestId = `ai_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            window.MIXPANEL_SESSION.aiGenerationRequestId = requestId;
+            window.MIXPANEL_SESSION.aiGenerationStartTime = Date.now();
+            
+            // Track AI generation requested
+            if (window.MixpanelTracking) {
+                window.MixpanelTracking.trackAIGenerationRequested({
+                    prompt_length: prompt.length,
+                    prompt_preview: prompt.substring(0, 50),
+                    requested_rows: requestedRows,
+                    requested_cols: requestedCols,
+                    ai_decided_rows: aiRowsAuto.checked,
+                    ai_decided_cols: aiColsAuto.checked
+                });
+            }
+            
+            // Send message to plugin code to handle AI generation (avoids CORS issues)
+            parent.postMessage({
+                pluginMessage: {
+                    type: 'generate-ai-table',
+                    prompt: prompt,
+                    requestedRows: requestedRows,
+                    requestedCols: requestedCols,
+                    requestId: requestId
+                }
+            }, '*');
+        });
 
         // Configuration Logic
         function updateConfigState() {
@@ -1068,12 +1545,89 @@
             }
         });
 
+        // Sorting Logic
+        function updateSortOptions() {
+            const cols = data[0] ? data[0].length : 0;
+            const currentValue = sortSelect.value;
+            
+            // Clear existing options
+            sortSelect.innerHTML = '<option value="none">None</option>';
+            
+            // Add column options
+            for (let i = 0; i < cols; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = `C${i + 1}`;
+                sortSelect.appendChild(option);
+            }
+            
+            // Restore selection if valid, otherwise reset to none
+            if (currentValue !== 'none' && parseInt(currentValue) < cols) {
+                sortSelect.value = currentValue;
+            } else {
+                sortSelect.value = 'none';
+            }
+        }
+
+
+        function sortData(columnIndex) {
+            if (columnIndex === 'none') {
+                render();
+                return;
+            }
+            
+            const colIdx = parseInt(columnIndex);
+            
+            // Separate header and content
+            const headerRow = data[0];
+            const contentRows = data.slice(1);
+            
+            // Helper to extract numeric value from string
+            function extractNumber(str) {
+                const match = str.match(/[\d.]+/);
+                return match ? parseFloat(match[0]) : null;
+            }
+            
+            // Sort content rows
+            contentRows.sort((a, b) => {
+                const valA = (a[colIdx] || '').toString();
+                const valB = (b[colIdx] || '').toString();
+                
+                // Try to extract numbers
+                const numA = extractNumber(valA);
+                const numB = extractNumber(valB);
+                
+                // If both values contain numbers, sort numerically
+                if (numA !== null && numB !== null) {
+                    return numA - numB;
+                }
+                
+                // Otherwise, sort alphabetically (case-insensitive)
+                const lowerA = valA.toLowerCase();
+                const lowerB = valB.toLowerCase();
+                if (lowerA < lowerB) return -1;
+                if (lowerA > lowerB) return 1;
+                return 0;
+            });
+            
+            // Reassemble data
+            data = [headerRow, ...contentRows];
+            render();
+        }
+
+        // Sort Event Listener
+        sortSelect.addEventListener('change', () => {
+            sortData(sortSelect.value);
+        });
+
         // Initialize Config State
         updateConfigState();
         updatePaginationFields();
+        updateSortOptions();
 
         // Render Function
         function render() {
+            updateSortOptions();
             const rows = data.length;
             const cols = data[0] ? data[0].length : 0;
 
@@ -1141,6 +1695,7 @@
             const oldCols = data[0] ? data[0].length : 0;
             data = data.map((row, index) => [...row, index === 0 ? 'Header' : 'Content']);
             if (data.length === 0) data.push(['Header']);
+            updateSortOptions();
             render();
             
             // Track grid editor action
@@ -1431,13 +1986,13 @@
 
                 // Validate file type
                 if (!allowedExtensions.includes(fileExtension)) {
+                    // Track file parse failed (invalid type)
                     if (window.MixpanelTracking) {
-                        window.MixpanelTracking.trackPluginError({
-                            error_message: 'Invalid file type',
-                            error_stack: null,
-                            operation: 'file_upload_validation',
-                            selection_count: 0,
-                            node_types: []
+                        window.MixpanelTracking.trackFileParseFailed({
+                            file_type: fileExtension,
+                            error_type: 'unsupported_type',
+                            error_message: `Invalid file type: ${fileExtension}. Allowed types: ${allowedExtensions.join(', ')}`,
+                            file_size_kb: parseFloat(fileSizeKB)
                         });
                     }
                     parent.postMessage({
@@ -1452,13 +2007,13 @@
 
                 // Validate file size
                 if (file.size > MAX_FILE_SIZE) {
+                    // Track file parse failed (size validation)
                     if (window.MixpanelTracking) {
-                        window.MixpanelTracking.trackPluginError({
+                        window.MixpanelTracking.trackFileParseFailed({
+                            file_type: fileExtension,
+                            error_type: 'size_limit',
                             error_message: `File size exceeds 50KB limit. File size: ${fileSizeKB}KB`,
-                            error_stack: null,
-                            operation: 'file_upload_validation',
-                            selection_count: 0,
-                            node_types: []
+                            file_size_kb: parseFloat(fileSizeKB)
                         });
                     }
                     parent.postMessage({
@@ -1469,6 +2024,15 @@
                     }, '*');
                     fileInput.value = '';
                     return;
+                }
+
+                // Track file upload started
+                if (window.MixpanelTracking) {
+                    window.MixpanelTracking.trackFileUploadStarted({
+                        file_type: fileExtension,
+                        file_size_kb: parseFloat(fileSizeKB),
+                        file_name: file.name.substring(0, 100) // Limit filename length
+                    });
                 }
 
                 const reader = new FileReader();
@@ -1499,13 +2063,13 @@
                                 rows = XLSXLib.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
                                 rows = rows.map(row => row.map(cell => String(cell || '')));
                             } catch (error) {
+                                // Track file parse failed
                                 if (window.MixpanelTracking) {
-                                    window.MixpanelTracking.trackPluginError({
+                                    window.MixpanelTracking.trackFileParseFailed({
+                                        file_type: 'xlsx',
+                                        error_type: 'parse_error',
                                         error_message: `Error loading XLSX library: ${error.message}`,
-                                        error_stack: error.stack || null,
-                                        operation: 'parse_xlsx',
-                                        selection_count: 0,
-                                        node_types: []
+                                        file_size_kb: parseFloat(fileSizeKB)
                                     });
                                 }
                                 parent.postMessage({
@@ -1520,18 +2084,13 @@
                         }
 
                         if (rows.length === 0) {
+                            // Track file parse failed (no data)
                             if (window.MixpanelTracking) {
-                                window.MixpanelTracking.trackFileUploaded({
+                                window.MixpanelTracking.trackFileParseFailed({
                                     file_type: fileExtension,
-                                    file_size_kb: parseFloat(fileSizeKB),
-                                    rows_parsed: 0,
-                                    columns_parsed: 0,
-                                    rows_loaded: 0,
-                                    columns_loaded: 0,
-                                    data_truncated: false,
-                                    execution_time_ms: Date.now() - startTime,
-                                    success: false,
-                                    error_message: 'No data found in file'
+                                    error_type: 'parse_error',
+                                    error_message: 'No data found in file',
+                                    file_size_kb: parseFloat(fileSizeKB)
                                 });
                             }
                             parent.postMessage({
@@ -1566,8 +2125,18 @@
                 
                 render();
                 
-                // Track file uploaded
+                // Track file parse completed
                         if (window.MixpanelTracking) {
+                            window.MixpanelTracking.trackFileParseCompleted({
+                                file_type: fileExtension,
+                                parsed_rows: rowsParsed,
+                                parsed_cols: colsParsed,
+                                parse_time_ms: parseTime,
+                                validation_errors: 0,
+                                truncated: dataTruncated
+                            });
+                            
+                            // Also track file uploaded (keep for backward compatibility)
                             window.MixpanelTracking.trackFileUploaded({
                                 file_type: fileExtension,
                                 file_size_kb: parseFloat(fileSizeKB),
@@ -1601,13 +2170,21 @@
                         }, '*');
                         fileInput.value = '';
                     } catch (error) {
+                        // Determine error type
+                        let errorType = 'parse_error';
+                        if (error.message.includes('format') || error.message.includes('invalid')) {
+                            errorType = 'invalid_format';
+                        } else if (error.message.includes('unsupported') || error.message.includes('type')) {
+                            errorType = 'unsupported_type';
+                        }
+                        
+                        // Track file parse failed
                         if (window.MixpanelTracking) {
-                            window.MixpanelTracking.trackPluginError({
+                            window.MixpanelTracking.trackFileParseFailed({
+                                file_type: fileExtension,
+                                error_type: errorType,
                                 error_message: `Error parsing file: ${error.message}`,
-                                error_stack: error.stack || null,
-                                operation: `parse_${fileExtension}`,
-                                selection_count: 0,
-                                node_types: []
+                                file_size_kb: parseFloat(fileSizeKB)
                             });
                         }
                         parent.postMessage({
@@ -1692,6 +2269,84 @@
                     document.body.classList.remove('has-warning');
                     warningCallout.classList.remove('visible');
                 }
+            } else if (msg.type === 'ai-generation-started') {
+                // Track AI generation started
+                if (window.MixpanelTracking && msg.requestId) {
+                    window.MIXPANEL_SESSION.aiGenerationRequestId = msg.requestId;
+                    window.MIXPANEL_SESSION.aiGenerationStartTime = Date.now();
+                    window.MixpanelTracking.trackAIGenerationStarted({
+                        request_id: msg.requestId
+                    });
+                }
+            } else if (msg.type === 'ai-table-generated') {
+                // Stop loading animation and reset button state
+                stopLoadingAnimation();
+                aiGenerateSubmit.disabled = false;
+                aiPrompt.disabled = false;
+                validateAIPrompt();
+                
+                const requestId = window.MIXPANEL_SESSION.aiGenerationRequestId || '';
+                const generationTime = window.MIXPANEL_SESSION.aiGenerationStartTime ? 
+                    Date.now() - window.MIXPANEL_SESSION.aiGenerationStartTime : 0;
+                
+                if (msg.success && msg.tableData) {
+                    // Update table data
+                    data = msg.tableData;
+                    render();
+                    
+                    // Track AI generation completed
+                    if (window.MixpanelTracking) {
+                        window.MixpanelTracking.addSessionAction('ai_generation_completed');
+                        window.MixpanelTracking.trackAIGenerationCompleted({
+                            request_id: requestId,
+                            generated_rows: msg.tableData.length - 1,
+                            generated_cols: msg.tableData[0] ? msg.tableData[0].length : 0,
+                            generation_time_ms: generationTime,
+                            api_response_time_ms: msg.apiResponseTime || null,
+                            data_parsing_time_ms: msg.dataParsingTime || null,
+                            prompt_tokens: msg.promptTokens || null,
+                            response_tokens: msg.responseTokens || null
+                        });
+                    }
+                    
+                    // Close modal
+                    closeAIModal();
+                } else if (!msg.success && msg.error) {
+                    // Determine error type
+                    let errorType = 'unknown';
+                    let errorCode = null;
+                    
+                    if (msg.error.includes('403') || msg.error.includes('authentication')) {
+                        errorType = 'auth_error';
+                    } else if (msg.error.includes('429') || msg.error.includes('rate limit')) {
+                        errorType = 'rate_limit';
+                        errorCode = '429';
+                    } else if (msg.error.includes('network') || msg.error.includes('fetch')) {
+                        errorType = 'network_error';
+                    } else if (msg.error.includes('parse') || msg.error.includes('JSON')) {
+                        errorType = 'parse_error';
+                    } else if (msg.error.includes('Invalid') || msg.error.includes('format')) {
+                        errorType = 'validation_error';
+                    } else if (msg.error.includes('API') || msg.error.includes('request failed')) {
+                        errorType = 'api_error';
+                    }
+                    
+                    // Track AI generation failed
+                    if (window.MixpanelTracking) {
+                        window.MixpanelTracking.trackAIGenerationFailed({
+                            request_id: requestId,
+                            error_type: errorType,
+                            error_message: msg.error,
+                            error_code: errorCode,
+                            generation_time_ms: generationTime,
+                            retry_attempt: 0
+                        });
+                    }
+                }
+                
+                // Reset generation state
+                window.MIXPANEL_SESSION.aiGenerationRequestId = null;
+                window.MIXPANEL_SESSION.aiGenerationStartTime = null;
             } else if (msg.type === 'table-data-fetched') {
                 const startTime = Date.now();
                 
@@ -1784,6 +2439,44 @@
         render();
 
     </script>
+
+    <div id="resize-handle">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 12L12 4M12 12L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;"/>
+            <path d="M13.5 8.5L8.5 13.5M13.5 4.5L4.5 13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+    </div>
+
+    <script>
+        // Resize Handle Logic
+        const resizeHandle = document.getElementById('resize-handle');
+        let isResizing = false;
+
+        resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            e.preventDefault(); // Prevent text selection
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            
+            // Calculate new dimensions
+            // Add some padding to avoid cursor slipping off
+            const width = Math.max(300, e.clientX + 5); 
+            const height = Math.max(200, e.clientY + 5);
+
+            parent.postMessage({ 
+                pluginMessage: { 
+                    type: 'resize', 
+                    width: Math.round(width), 
+                    height: Math.round(height) 
+                } 
+            }, '*');
+        });
+
+        window.addEventListener('mouseup', () => {
+            isResizing = false;
+        });
+    </script>
 </body>
-</html>
 </html>

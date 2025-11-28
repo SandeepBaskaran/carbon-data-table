@@ -1,5 +1,5 @@
 {
-    "name": "carbon-data-table-plugin",
+    "name": "carbon-data-table",
     "version": "1.0.0",
     "description": "Figma plugin to build and insert Carbon Design System data tables.",
     "type": "module",
@@ -18,7 +18,5 @@
         "esbuild": "^0.25.5",
         "typescript": "^5.8.3"
     },
-    "dependencies": {
-        "mixpanel-browser": "^2.72.0"
-    }
+    "dependencies": {}
 }
