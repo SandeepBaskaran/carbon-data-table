@@ -570,7 +570,8 @@
             actions: [],
             tableCells: null,
             context: null,
-            communityFileButtonClicked: false
+            communityFileButtonClicked: false,
+            pluginClosedTracked: false
         };
 
 
@@ -651,6 +652,12 @@
                 this.trackEvent(window.MIXPANEL_EVENTS.PLUGIN_OPENED, properties);
             },
             trackPluginClosed: function(tableCells) {
+                // Prevent duplicate tracking
+                if (window.MIXPANEL_SESSION.pluginClosedTracked) {
+                    return;
+                }
+                window.MIXPANEL_SESSION.pluginClosedTracked = true;
+                
                 const properties = {
                     ...this.getBaseProperties(),
                     duration_ms: this.getSessionDuration(),
@@ -660,7 +667,8 @@
                     tables_modified: window.MIXPANEL_SESSION.actions.filter(a => a === 'table_modified').length,
                     timestamp: new Date().toISOString()
                 };
-                this.trackEvent(window.MIXPANEL_EVENTS.PLUGIN_CLOSED, properties);
+                // Use sendBeacon for reliable delivery during page unload
+                this.trackEvent(window.MIXPANEL_EVENTS.PLUGIN_CLOSED, properties, true);
             },
             trackTableInserted: function(data) {
                 this.addSessionAction('table_inserted');
@@ -804,7 +812,7 @@
                 };
                 this.trackEvent(window.MIXPANEL_EVENTS.PERFORMANCE_METRIC, properties);
             },
-            trackEvent: function(eventName, properties = {}) {
+            trackEvent: function(eventName, properties = {}, useBeacon = false) {
                 if (!MIXPANEL_TOKEN) return;
 
                 // Get anonymous user ID from context or session
@@ -823,7 +831,29 @@
                 const data = base64Encode(JSON.stringify(payload));
                 const url = `https://api.mixpanel.com/track?data=${data}`;
 
-                // Use fetch with keepalive for reliability
+                // Use sendBeacon for reliable delivery during page unload (plugin_closed)
+                if (useBeacon && navigator.sendBeacon) {
+                    try {
+                        const blob = new Blob([`data=${data}`], { type: 'application/x-www-form-urlencoded' });
+                        const sent = navigator.sendBeacon(url, blob);
+                        if (!sent) {
+                            // Fallback to fetch if sendBeacon fails
+                            fetch(url, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded'
+                                },
+                                body: `data=${data}`,
+                                keepalive: true
+                            }).catch(() => {});
+                        }
+                        return;
+                    } catch (error) {
+                        // Fallback to fetch if sendBeacon throws
+                    }
+                }
+
+                // Use fetch with keepalive for normal events
                 fetch(url, {
                     method: 'POST', // Using POST to avoid URL length limits, though GET is also common
                     headers: {
@@ -1715,9 +1745,28 @@
             }
         };
         
-        // Track plugin_closed on beforeunload
+        // Track plugin_closed on beforeunload with sendBeacon
         window.addEventListener('beforeunload', () => {
-            if (window.MixpanelTracking) {
+            if (window.MixpanelTracking && !window.MIXPANEL_SESSION.pluginClosedTracked) {
+                window.MixpanelTracking.trackPluginClosed(data);
+            }
+        });
+
+        // Also track on visibilitychange as fallback (when plugin loses focus/hides)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && window.MixpanelTracking && !window.MIXPANEL_SESSION.pluginClosedTracked) {
+                // Small delay to ensure beforeunload fires first if both trigger
+                setTimeout(() => {
+                    if (!window.MIXPANEL_SESSION.pluginClosedTracked) {
+                        window.MixpanelTracking.trackPluginClosed(data);
+                    }
+                }, 100);
+            }
+        });
+
+        // Track on pagehide as additional fallback (more reliable than beforeunload)
+        window.addEventListener('pagehide', () => {
+            if (window.MixpanelTracking && !window.MIXPANEL_SESSION.pluginClosedTracked) {
                 window.MixpanelTracking.trackPluginClosed(data);
             }
         });

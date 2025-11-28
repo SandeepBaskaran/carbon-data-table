@@ -70,19 +70,75 @@ interface PluginMessage {
 }
 
 // State
-let isLibraryEnabled = false;
+let isLibraryEnabled = true; // Default to true, check on demand
+
+// Helper function to check if error is an expected permission/library error
+function isExpectedError(error: any): boolean {
+    if (!error) return false;
+    const message = error.message || String(error) || '';
+    const errorString = String(error);
+    return message.includes('permission') ||
+        message.includes('Permission') ||
+        message.includes('Access denied') ||
+        message.includes('403') ||
+        message.includes('library') ||
+        message.includes('Library') ||
+        errorString.includes('RuntimeError') ||
+        errorString.includes('memory access') ||
+        errorString.includes('out of bounds');
+}
+
+// Safe wrapper for getMainComponentAsync to prevent WebAssembly crashes
+async function safeGetMainComponent(instance: InstanceNode): Promise<ComponentNode | null> {
+    if (!isLibraryEnabled) {
+        return null;
+    }
+    
+    // Double-wrap to catch WebAssembly errors that might bypass normal catch
+    try {
+        try {
+            return await instance.getMainComponentAsync();
+        } catch (innerError: any) {
+            // Catch WebAssembly crashes and permission errors
+            if (isExpectedError(innerError)) {
+                isLibraryEnabled = false;
+                figma.ui.postMessage({
+                    type: "library-status",
+                    isEnabled: false,
+                    libraryUrl: CARBON_LIBRARY_URL
+                });
+                return null;
+            }
+            // Re-throw unexpected errors
+            throw innerError;
+        }
+    } catch (outerError: any) {
+        // Catch any errors that bypassed the inner catch (including WebAssembly crashes)
+        if (isExpectedError(outerError)) {
+            isLibraryEnabled = false;
+            figma.ui.postMessage({
+                type: "library-status",
+                isEnabled: false,
+                libraryUrl: CARBON_LIBRARY_URL
+            });
+            return null;
+        }
+        // For truly unexpected errors, return null instead of throwing to prevent crashes
+        return null;
+    }
+}
 
 // Anonymous User ID Management
 async function getOrCreateAnonymousUserId(): Promise<string> {
     const userIdKey = 'mixpanel_anonymous_user_id';
     let userId = await figma.clientStorage.getAsync(userIdKey);
-    
+
     if (!userId) {
         userId = `figma_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         await figma.clientStorage.setAsync(userIdKey, userId);
         return userId;
     }
-    
+
     return userId;
 }
 
@@ -101,10 +157,10 @@ async function getPluginContext() {
     const pageName = figma.currentPage.name;
     const selectionCount = selection.length;
     const nodeTypes = selection.map(node => node.type);
-    
+
     const anonymousUserId = await getOrCreateAnonymousUserId();
     const firstTimeUser = await isFirstTimeUser();
-    
+
     return {
         file_key: fileKey,
         page_name: pageName,
@@ -200,11 +256,11 @@ function extractHeaderTextSafe(colNode: InstanceNode): string {
 function extractBodyTextSafe(colNode: SceneNode & ChildrenMixin): string {
     try {
         let contentNode: SceneNode & ChildrenMixin | null = null;
-        
+
         if ('children' in colNode) {
             contentNode = colNode.children.find(n => n.name === "Content" && 'children' in n) as SceneNode & ChildrenMixin;
         }
-        
+
         if (!contentNode) {
             const findContent = (node: SceneNode & ChildrenMixin): SceneNode & ChildrenMixin | null => {
                 for (const child of node.children) {
@@ -218,15 +274,15 @@ function extractBodyTextSafe(colNode: SceneNode & ChildrenMixin): string {
             };
             contentNode = findContent(colNode);
         }
-        
+
         if (!contentNode) return "Content";
 
-        const textGroupNode = contentNode.findOne ? 
+        const textGroupNode = contentNode.findOne ?
             contentNode.findOne(n => n.name === "Text group" && 'children' in n) as FrameNode :
             null;
-            
+
         if (!textGroupNode) {
-            const fallbackText = contentNode.findOne ? 
+            const fallbackText = contentNode.findOne ?
                 contentNode.findOne(n => n.type === "TEXT" && n.visible) as TextNode :
                 null;
             return fallbackText ? fallbackText.characters : "Content";
@@ -244,22 +300,38 @@ async function findExistingTableInstance(): Promise<InstanceNode | null> {
     const selection = figma.currentPage.selection;
     if (selection.length !== 1 || selection[0].type !== "INSTANCE") return null;
     
+    // Early return if library is not enabled to prevent WebAssembly crashes
+    if (!isLibraryEnabled) {
+        return null;
+    }
+
     const instance = selection[0];
     try {
-        const mainComponent = await instance.getMainComponentAsync();
+        const mainComponent = await safeGetMainComponent(instance);
         if (mainComponent?.key && VALID_TABLE_KEYS.includes(mainComponent.key)) {
             return instance;
         }
     } catch {
-        // Invalid selection
+        // Invalid selection or error accessing component
     }
     return null;
 }
 
 async function fetchTableData(instance: InstanceNode): Promise<void> {
     try {
-        const mainComponent = await instance.getMainComponentAsync();
-        const key = mainComponent?.key || "";
+        // Check library availability first
+        if (!isLibraryEnabled) {
+            figma.notify("Cannot access table data. Please ensure library is enabled.", { error: true });
+            return;
+        }
+
+        const mainComponent = await safeGetMainComponent(instance);
+        if (!mainComponent) {
+            figma.notify("Cannot access table data. Please ensure library is enabled.", { error: true });
+            return;
+        }
+        
+        const key = mainComponent.key || "";
         const config: TableConfig = KEY_TO_CONFIG[key] || { variant: 'default', expandable: false, batchActions: false };
 
         // Fetch Pagination
@@ -267,17 +339,23 @@ async function fetchTableData(instance: InstanceNode): Promise<void> {
         const paginationData: PaginationData = { type: 'advanced', itemsPerPage: '', totalItems: '', totalPages: '', currentPage: '' };
 
         if (paginationBar) {
-            const pagComponent = await paginationBar.getMainComponentAsync();
-            const pagKey = pagComponent?.key || "";
-            const type = PAGINATION_KEY_TO_TYPE[pagKey] || 'advanced';
-            paginationData.type = type as 'advanced' | 'simple' | 'unbound';
+            try {
+                const pagComponent = await safeGetMainComponent(paginationBar);
+                if (pagComponent) {
+                    const pagKey = pagComponent.key || "";
+                    const type = PAGINATION_KEY_TO_TYPE[pagKey] || 'advanced';
+                    paginationData.type = type as 'advanced' | 'simple' | 'unbound';
 
-            if (type === 'advanced') {
-                paginationData.itemsPerPage = getTextValueSafe(paginationBar, "Option");
-                paginationData.totalItems = getTextValueSafe(paginationBar, "1–100 of 100 items");
-                paginationData.totalPages = getTextValueSafe(paginationBar, "Total pages");
-            } else {
-                paginationData.currentPage = getTextValueSafe(paginationBar, "Total pages");
+                    if (type === 'advanced') {
+                        paginationData.itemsPerPage = getTextValueSafe(paginationBar, "Option");
+                        paginationData.totalItems = getTextValueSafe(paginationBar, "1–100 of 100 items");
+                        paginationData.totalPages = getTextValueSafe(paginationBar, "Total pages");
+                    } else {
+                        paginationData.currentPage = getTextValueSafe(paginationBar, "Total pages");
+                    }
+                }
+            } catch {
+                // Silently fail pagination fetch - optional feature
             }
         }
 
@@ -325,7 +403,12 @@ async function fetchTableData(instance: InstanceNode): Promise<void> {
         });
         figma.notify("Table data fetched successfully.");
     } catch (e) {
-        figma.notify("Failed to fetch table data. Check console.", { error: true });
+        if (!isExpectedError(e)) {
+            // Only notify for unexpected errors
+            figma.notify("Failed to fetch table data.", { error: true });
+        } else {
+            figma.notify("Cannot access table data. Please ensure library is enabled.", { error: true });
+        }
     }
 }
 
@@ -344,13 +427,35 @@ async function updatePaginationText(paginationBar: InstanceNode, textNodeName: s
 
 async function updatePagination(instance: InstanceNode, paginationKey: string, paginationData: PaginationData): Promise<void> {
     try {
+        // Early return if library is not enabled
+        if (!isLibraryEnabled) {
+            return;
+        }
+
         const paginationBar = instance.findOne(n => n.name === "Pagination - Table bar" && n.type === "INSTANCE") as InstanceNode;
         if (!paginationBar) return;
 
-        const currentComponent = await paginationBar.getMainComponentAsync();
-        if (currentComponent?.key !== paginationKey) {
-            const newPaginationMaster = await figma.importComponentByKeyAsync(paginationKey);
-            paginationBar.swapComponent(newPaginationMaster);
+        try {
+            const currentComponent = await safeGetMainComponent(paginationBar);
+            if (!currentComponent) {
+                return; // Library not accessible
+            }
+            
+            if (currentComponent.key !== paginationKey) {
+                try {
+                    const newPaginationMaster = await figma.importComponentByKeyAsync(paginationKey);
+                    paginationBar.swapComponent(newPaginationMaster);
+                } catch (importError) {
+                    // Silently fail if library access is denied - pagination is optional
+                    if (!isExpectedError(importError)) {
+                        throw importError;
+                    }
+                    return;
+                }
+            }
+        } catch {
+            // Silently fail if component access fails - pagination is optional
+            return;
         }
 
         if (paginationData.type === 'advanced') {
@@ -368,11 +473,11 @@ async function updatePagination(instance: InstanceNode, paginationKey: string, p
 async function updateHeaderTextValues(colNode: InstanceNode, colIndex: number, rowData: string[]): Promise<void> {
     let textNode: TextNode | null = null;
     const contentNode = colNode.findOne(n => n.name === "Content");
-    
+
     if (contentNode && 'children' in contentNode) {
         textNode = (contentNode as FrameNode).findOne(n => n.type === "TEXT") as TextNode;
     }
-    
+
     if (!textNode) {
         textNode = colNode.findOne(n => n.type === "TEXT") as TextNode;
     }
@@ -390,7 +495,7 @@ async function updateHeaderTextValues(colNode: InstanceNode, colIndex: number, r
 async function updateBodyTextValues(colNode: FrameNode, colIndex: number, rowData: string[]): Promise<void> {
     let textNode: TextNode | null = null;
     const contentNode = colNode.findOne(n => n.name === "Content");
-    
+
     if (contentNode && 'children' in contentNode) {
         const aiSlugNode = (contentNode as FrameNode).findOne(n => n.name === "AI slug + Text");
         if (aiSlugNode && 'children' in aiSlugNode) {
@@ -478,7 +583,20 @@ async function insertTable(rows: number, columns: number, cells: string[][], com
             return;
         }
 
-        const master = await figma.importComponentByKeyAsync(componentKey);
+        // Defensive check: try to import component with specific error handling
+        let master;
+        try {
+            master = await figma.importComponentByKeyAsync(componentKey);
+        } catch (importError: any) {
+            // Handle expected permission/library errors silently
+            if (isExpectedError(importError)) {
+                figma.notify("Permission denied: Cannot access Carbon library. Please enable it.", { error: true });
+                return;
+            }
+            // Re-throw unexpected errors
+            throw importError;
+        }
+
         const instance = master.createInstance();
         figma.currentPage.appendChild(instance);
 
@@ -491,8 +609,23 @@ async function insertTable(rows: number, columns: number, cells: string[][], com
         figma.currentPage.selection = [instance];
         figma.viewport.scrollAndZoomIntoView([instance]);
         figma.notify("Table inserted successfully.");
-    } catch (error) {
-        figma.notify("Failed to insert table. Check console for details.", { error: true });
+    } catch (error: any) {
+        // Only log unexpected errors (not permission/library errors)
+        if (!isExpectedError(error)) {
+            // Unexpected error - could log here if needed for debugging, but keeping silent for production
+        }
+
+        if (isExpectedError(error)) {
+            isLibraryEnabled = false;
+            figma.ui.postMessage({
+                type: "library-status",
+                isEnabled: false,
+                libraryUrl: CARBON_LIBRARY_URL
+            });
+            figma.notify("Permission denied: Cannot access Carbon library. Please enable it.", { error: true });
+        } else {
+            figma.notify("Failed to insert table.", { error: true });
+        }
     }
 }
 
@@ -503,13 +636,56 @@ async function modifyTable(instance: InstanceNode, rows: number, columns: number
             return;
         }
 
-        const mainComponent = await instance.getMainComponentAsync();
-        if (mainComponent?.key !== componentKey) {
-            const newMaster = await figma.importComponentByKeyAsync(componentKey);
-            instance.swapComponent(newMaster);
+        try {
+            const mainComponent = await safeGetMainComponent(instance);
+            if (!mainComponent) {
+                // Library not accessible, already handled in safeGetMainComponent
+                return;
+            }
+            
+            if (mainComponent.key !== componentKey) {
+                try {
+                    const newMaster = await figma.importComponentByKeyAsync(componentKey);
+                    instance.swapComponent(newMaster);
+                } catch (importError: any) {
+                    // Handle expected permission/library errors silently
+                    if (isExpectedError(importError)) {
+                        isLibraryEnabled = false;
+                        figma.ui.postMessage({
+                            type: "library-status",
+                            isEnabled: false,
+                            libraryUrl: CARBON_LIBRARY_URL
+                        });
+                        figma.notify("Permission denied: Cannot access Carbon library.", { error: true });
+                        return;
+                    }
+                    // Re-throw unexpected errors
+                    throw importError;
+                }
+            }
+        } catch (error: any) {
+            // Handle expected permission/library errors silently
+            if (isExpectedError(error)) {
+                isLibraryEnabled = false;
+                figma.ui.postMessage({
+                    type: "library-status",
+                    isEnabled: false,
+                    libraryUrl: CARBON_LIBRARY_URL
+                });
+                figma.notify("Permission denied: Cannot access Carbon library.", { error: true });
+                return;
+            }
+            // Re-throw unexpected errors
+            throw error;
         }
-    } catch {
-        figma.notify("Failed to update table variant.", { error: true });
+
+    } catch (error: any) {
+        // Only handle unexpected errors here
+        if (!isExpectedError(error)) {
+            // Unexpected error - could log here if needed for debugging, but keeping silent for production
+            figma.notify("Failed to update table variant.", { error: true });
+        }
+        return;
     }
 
     await updateTable(instance, rows, columns, cells);
@@ -518,14 +694,8 @@ async function modifyTable(instance: InstanceNode, rows: number, columns: number
 }
 
 // Initialization
-async function checkLibraryAvailability(): Promise<boolean> {
-    try {
-        await figma.importComponentByKeyAsync(VALID_TABLE_KEYS[0]);
-        return true;
-    } catch {
-        return false;
-    }
-}
+// Removed checkLibraryAvailability to prevent "Invalid metric" errors on startup
+
 
 figma.showUI(__html__, {
     width: 1250,
@@ -534,7 +704,9 @@ figma.showUI(__html__, {
 });
 
 (async () => {
-    isLibraryEnabled = await checkLibraryAvailability();
+    // Optimistically assume library is enabled to prevent startup errors
+    // The error will be caught and handled if the user tries to insert/modify
+    isLibraryEnabled = true;
     figma.ui.postMessage({
         type: "library-status",
         isEnabled: isLibraryEnabled,
@@ -544,11 +716,29 @@ figma.showUI(__html__, {
 
 // Event Handlers
 figma.on("selectionchange", async () => {
-    const instance = await findExistingTableInstance();
-    figma.ui.postMessage({
-        type: "selection-status",
-        validTableSelected: !!instance
-    });
+    try {
+        const instance = await findExistingTableInstance();
+        figma.ui.postMessage({
+            type: "selection-status",
+            validTableSelected: !!instance
+        });
+    } catch (error: any) {
+        // Silently handle any errors during selection change to prevent WebAssembly crashes
+        // This includes WebAssembly memory errors that might not be caught elsewhere
+        if (isExpectedError(error)) {
+            isLibraryEnabled = false;
+            figma.ui.postMessage({
+                type: "library-status",
+                isEnabled: false,
+                libraryUrl: CARBON_LIBRARY_URL
+            });
+        }
+        // Always send a message to UI even on error to prevent UI from hanging
+        figma.ui.postMessage({
+            type: "selection-status",
+            validTableSelected: false
+        });
+    }
 });
 
 figma.ui.onmessage = async (msg: PluginMessage) => {
